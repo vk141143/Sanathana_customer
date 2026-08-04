@@ -1,0 +1,6 @@
+{
+  "name": "SANATANA",
+  "description": "Eternal Wisdom. Timeless Truth. Sacred scripture reader, Sadhana tracker, temple finder, and meditation sanctuary.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
