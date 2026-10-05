@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Album } from './audioData';
+import { SupabaseAlbum, useSupabaseAudio } from './useSupabaseAudio';
 import { useAudioPlayer } from './useAudioPlayer';
 import { AudioAlbumsScreen } from './AudioAlbumsScreen';
 import { AudioAlbumDetail } from './AudioAlbumDetail';
 import { NowPlayingScreen } from './NowPlayingScreen';
 import { MiniPlayer } from './MiniPlayer';
 
-type Screen = 'albums' | 'detail' | 'player';
+type Screen = 'albums' | 'detail';
 
 interface Props {
   onBack: () => void;
@@ -15,12 +15,13 @@ interface Props {
 
 export const DevotionalAudioView: React.FC<Props> = ({ onBack }) => {
   const [screen, setScreen] = useState<Screen>('albums');
-  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+  const [selectedAlbum, setSelectedAlbum] = useState<SupabaseAlbum | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
 
+  const { albums, loading, error } = useSupabaseAudio();
   const { state, play, togglePlay, seek, next, prev, toggleShuffle, toggleRepeat } = useAudioPlayer();
 
-  const handleSelectAlbum = (album: Album) => {
+  const handleSelectAlbum = (album: SupabaseAlbum) => {
     setSelectedAlbum(album);
     setScreen('detail');
   };
@@ -29,41 +30,28 @@ export const DevotionalAudioView: React.FC<Props> = ({ onBack }) => {
     if (selectedAlbum) play(selectedAlbum, index);
   };
 
-  const handleOpenPlayer = () => setShowPlayer(true);
-  const handleMinimise = () => setShowPlayer(false);
-
-  const handleBackFromDetail = () => {
-    setScreen('albums');
-    setSelectedAlbum(null);
-  };
-
-  const handleBackFromAlbums = () => {
-    // Keep mini player alive, just close the audio section
-    onBack();
-  };
-
   return (
     <>
-      {/* Albums screen */}
       {screen === 'albums' && (
         <AudioAlbumsScreen
+          albums={albums}
+          loading={loading}
+          error={error}
           onSelectAlbum={handleSelectAlbum}
-          onBack={handleBackFromAlbums}
+          onBack={onBack}
         />
       )}
 
-      {/* Album detail screen */}
       {screen === 'detail' && selectedAlbum && (
         <AudioAlbumDetail
           album={selectedAlbum}
           playerState={state}
           onPlayTrack={handlePlayTrack}
-          onBack={handleBackFromDetail}
-          onOpenPlayer={handleOpenPlayer}
+          onBack={() => { setScreen('albums'); setSelectedAlbum(null); }}
+          onOpenPlayer={() => setShowPlayer(true)}
         />
       )}
 
-      {/* Full-screen Now Playing */}
       <AnimatePresence>
         {showPlayer && state.track && (
           <NowPlayingScreen
@@ -74,12 +62,11 @@ export const DevotionalAudioView: React.FC<Props> = ({ onBack }) => {
             onSeek={seek}
             onToggleShuffle={toggleShuffle}
             onToggleRepeat={toggleRepeat}
-            onMinimise={handleMinimise}
+            onMinimise={() => setShowPlayer(false)}
           />
         )}
       </AnimatePresence>
 
-      {/* Mini player — shows when track is loaded but full player is hidden */}
       <AnimatePresence>
         {state.track && !showPlayer && (
           <MiniPlayer
@@ -87,7 +74,7 @@ export const DevotionalAudioView: React.FC<Props> = ({ onBack }) => {
             onTogglePlay={togglePlay}
             onNext={next}
             onPrev={prev}
-            onExpand={handleOpenPlayer}
+            onExpand={() => setShowPlayer(true)}
           />
         )}
       </AnimatePresence>

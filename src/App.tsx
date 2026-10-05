@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { NavTab, UserProfile, SadhanaTask } from './types';
-import { GITA_CHAPTERS, GITA_VERSES } from './data/scriptures';
 import { TEMPLES_DATA, SPIRITUAL_EVENTS, EMOTION_HEALING_CATEGORIES } from './data/temples';
 import { DEFAULT_SADHANA_TASKS } from './data/sadhana';
 
@@ -16,6 +15,9 @@ import { TempleMapView } from './components/TempleMapView';
 import { ProfileView } from './components/ProfileView';
 import { AchievementsView } from './components/AchievementsView';
 import { AuthView } from './components/AuthView';
+import { NotificationsView } from './components/NotificationsView';
+import { FestivalsListView } from './components/FestivalsListView';
+import { FestivalDetailView } from './components/FestivalDetailView';
 
 import { GratitudeModal } from './components/GratitudeModal';
 import { JapaCounterModal } from './components/JapaCounterModal';
@@ -24,6 +26,7 @@ import { NotesModal } from './components/NotesModal';
 
 export default function App() {
   const [showTempleJourney, setShowTempleJourney] = useState(false);
+  const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
 
   const [showSplash, setShowSplash] = useState<boolean>(() => {
     try {
@@ -57,6 +60,8 @@ export default function App() {
       eventsCount: 0,
       isLoggedIn: false,
       email: '',
+      preferred_reading_language: 'en',
+      reading_progress: null,
       bookmarks: [],
       notes: {},
       gratitudeLogs: [],
@@ -90,6 +95,11 @@ export default function App() {
     localStorage.setItem('sanatana_sadhana', JSON.stringify(sadhanaTasks));
   }, [sadhanaTasks]);
 
+  const handleTabChange = (tab: NavTab) => {
+    if (tab !== 'festivals') setSelectedFestivalId(null);
+    setCurrentTab(tab);
+  };
+
   const handleToggleTask = (taskId: string) => {
     setSadhanaTasks(prev =>
       prev.map(t => (t.id === taskId ? { ...t, completed: !t.completed } : t))
@@ -104,6 +114,19 @@ export default function App() {
         : [...prev.bookmarks, verseId];
       return { ...prev, bookmarks: updated };
     });
+  };
+
+  const handlePreferredReadingLanguageChange = (language: string) => {
+    setUser(prev => ({ ...prev, preferred_reading_language: language }));
+  };
+
+  const handleReadingProgressChange = (progress: {
+    scripture_id: string;
+    chapter_id: string;
+    verse_number: number;
+    language: string;
+  }) => {
+    setUser(prev => ({ ...prev, reading_progress: progress }));
   };
 
   const handleSaveNote = (verseId: string, noteText: string) => {
@@ -149,7 +172,7 @@ export default function App() {
 
   const handleSignOut = () => {
     setUser(prev => ({ ...prev, isLoggedIn: false }));
-    setCurrentTab('auth');
+    handleTabChange('auth');
   };
 
   const handleSignInSuccess = (userData: Partial<UserProfile>) => {
@@ -161,7 +184,7 @@ export default function App() {
       return (
         <AuthView
           onSignInSuccess={handleSignInSuccess}
-          onTabChange={setCurrentTab}
+          onTabChange={handleTabChange}
         />
       );
     }
@@ -172,7 +195,7 @@ export default function App() {
           temples={TEMPLES_DATA}
           onTabChange={tab => {
             setShowTempleMap(false);
-            setCurrentTab(tab);
+            handleTabChange(tab);
           }}
         />
       );
@@ -184,19 +207,24 @@ export default function App() {
           <HomeView
             user={user}
             streakDays={user.dayStreak}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
             onOpenGratitudeModal={() => setIsGratitudeOpen(true)}
             onOpenChantingModal={() => setIsChantingOpen(true)}
+            userEmail={user.email}
+            readingProgress={user.reading_progress}
           />
         );
 
       case 'library':
         return (
           <ScriptureReader
-            chapters={GITA_CHAPTERS}
             bookmarks={user.bookmarks}
             onToggleBookmark={handleToggleBookmark}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
+            preferredReadingLanguage={user.preferred_reading_language ?? 'en'}
+            readingProgress={user.reading_progress ?? null}
+            onPreferredLanguageChange={handlePreferredReadingLanguageChange}
+            onReadingProgressChange={handleReadingProgressChange}
           />
         );
 
@@ -210,14 +238,14 @@ export default function App() {
             onOpenChantingModal={() => setIsChantingOpen(true)}
             onOpenAddTaskModal={() => setIsAddTaskOpen(true)}
             streakDays={user.dayStreak}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
           />
         );
 
       case 'meditation':
         return (
           <MeditationView
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
             onCompleteSession={handleMeditationCompleted}
           />
         );
@@ -229,7 +257,7 @@ export default function App() {
             events={SPIRITUAL_EVENTS}
             emotions={EMOTION_HEALING_CATEGORIES}
             onOpenTempleMap={() => setShowTempleMap(true)}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
           />
         );
 
@@ -237,7 +265,7 @@ export default function App() {
         return (
           <ProfileView
             user={user}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
             onSignOut={handleSignOut}
             onOpenBookmarksModal={() => setIsNotesOpen(true)}
             onOpenNotesModal={() => setIsNotesOpen(true)}
@@ -248,9 +276,28 @@ export default function App() {
         return (
           <AchievementsView
             user={user}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
           />
         );
+
+      case 'festivals':
+        if (selectedFestivalId) {
+          return (
+            <FestivalDetailView
+              festivalId={selectedFestivalId}
+              onBack={() => setSelectedFestivalId(null)}
+            />
+          );
+        }
+        return (
+          <FestivalsListView
+            onTabChange={handleTabChange}
+            onSelectFestival={(festivalId) => setSelectedFestivalId(festivalId)}
+          />
+        );
+
+      case 'notifications':
+        return <NotificationsView onTabChange={handleTabChange} userEmail={user.email} />;
 
       default:
         return (
@@ -262,7 +309,7 @@ export default function App() {
             onOpenChantingModal={() => setIsChantingOpen(true)}
             onOpenAddTaskModal={() => setIsAddTaskOpen(true)}
             streakDays={user.dayStreak}
-            onTabChange={setCurrentTab}
+            onTabChange={handleTabChange}
           />
         );
     }
@@ -293,8 +340,8 @@ export default function App() {
       <main>{renderActiveTab()}</main>
 
       {/* Global Bottom Navigation */}
-      {!showSplash && !showTempleJourney && currentTab !== 'auth' && user.isLoggedIn && !showTempleMap && (
-        <BottomNav currentTab={currentTab} onTabChange={setCurrentTab} />
+      {!showSplash && !showTempleJourney && currentTab !== 'auth' && user.isLoggedIn && !showTempleMap && currentTab !== 'festivals' && (
+        <BottomNav currentTab={currentTab} onTabChange={handleTabChange} />
       )}
 
       {/* Modals */}
@@ -320,7 +367,7 @@ export default function App() {
         isOpen={isNotesOpen}
         onClose={() => setIsNotesOpen(false)}
         bookmarks={user.bookmarks}
-        allVerses={GITA_VERSES}
+        allVerses={[]}
         notes={user.notes}
         onSaveNote={handleSaveNote}
         onRemoveBookmark={handleToggleBookmark}

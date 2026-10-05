@@ -1,0 +1,33 @@
+.inner-flame-gateway { position: absolute; inset: 0; z-index: 25; pointer-events: none; }
+.inner-flame-backdrop-layer { position: absolute; inset: 0; z-index: 0; opacity: 0; background: rgba(0,0,0,.24); backdrop-filter: blur(var(--inner-flame-blur, 0px)); -webkit-backdrop-filter: blur(var(--inner-flame-blur, 0px)); pointer-events: none; }
+.inner-flame-dismiss { position: absolute; inset: 0; pointer-events: auto; }
+.inner-flame-stage { position: absolute; z-index: 1; left: 50%; bottom: 64px; width: 0; height: 0; }
+.inner-flame-caption { position: absolute; width: 260px; left: -130px; bottom: 56px; text-align: center; color: #a6834d; font-size: 9px; letter-spacing: .22em; }
+.inner-flame-energy { position: absolute; width: min(420px, calc(100vw - 20px)); height: 300px; left: 0; top: -150px; transform: translateX(-50%); overflow: visible; }
+.inner-flame-center { position: absolute; left: -44px; top: -44px; width: 88px; height: 88px; border: 1px solid rgba(240,214,164,.75); border-radius: 50%; background: #0d0804; pointer-events: auto; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.inner-flame-center svg { width: 68px; height: 68px; margin: auto; overflow: visible; filter: drop-shadow(0 0 4px rgba(242,195,119,.35)); }
+.inner-flame-aura, .inner-flame-dust, .inner-flame-shape, .inner-flame-ripple, .inner-flame-particle, .inner-flame-flash { opacity: 0; }
+.inner-flame-node { position: absolute; left: -40px; top: -48px; width: 80px; height: 96px; visibility: hidden; }
+.inner-flame-path { width: 80px; min-height: 96px; display: flex; flex-direction: column; align-items: center; gap: 4px; color: #d4a85f; pointer-events: auto; cursor: pointer; transition: transform .2s, color .2s; }
+.inner-flame-icon { display: flex; align-items: center; justify-content: center; width: 72px; height: 72px; filter: drop-shadow(0 0 3px rgba(212,168,95,.18)); transition: filter .2s; }
+.inner-flame-icon img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+.inner-flame-label { font-size: 9px; color: #f0d6a4; letter-spacing: .08em; font-weight: 700; line-height: 1; }
+.inner-flame-sub { font-size: 8px; line-height: 1; color: #c3ab84; }
+.inner-flame-gateway button:focus-visible { outline: 2px solid #f0d6a4; outline-offset: 4px; border-radius: 12px; }
+.inner-flame-gateway .inner-flame-center:focus-visible { border-radius: 50%; }
+/* Side sacred flames */
+.inner-flame-stream { transform-box: fill-box; transform-origin: center; }
+@media (hover: hover) { .inner-flame-path:hover { transform: scale(1.05); color: #f0d6a4; } .inner-flame-path:hover .inner-flame-icon { filter: drop-shadow(0 0 5px rgba(212,168,95,.35)); } .inner-flame-path:hover .inner-flame-label { color: #fff0d2; } }
+@media (prefers-reduced-motion: reduce) { .inner-flame-gateway .inner-flame-stream { display: none; } .inner-flame-path, .inner-flame-icon { transition: none; } }
+
+.inner-flame-energy { z-index: 1; }
+.inner-flame-node { z-index: 2; }
+
+.inner-flame-backdrop { position: absolute; width: 280px; height: 280px; left: -140px; top: -140px; pointer-events: none; }
+.inner-flame-ornament { opacity: .14; }
+.inner-flame-dust { transform-origin: center; }
+.inner-flame-ripple { filter: drop-shadow(0 0 2px rgba(212,168,95,.35)); }
+
+@media (max-width: 480px) { .inner-flame-icon { width: 64px; height: 64px; } .inner-flame-node { top: -44px; height: 88px; } .inner-flame-path { min-height: 88px; } }
+
+.inner-flame-core, .inner-flame-glow { opacity: 0; }

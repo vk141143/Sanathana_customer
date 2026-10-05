@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserProfile, NavTab } from '../types';
 import { Header } from './Header';
+import { ContactView } from './ContactView';
 
 interface ProfileViewProps {
   user: UserProfile;
@@ -17,6 +18,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenBookmarksModal,
   onOpenNotesModal,
 }) => {
+  const [showContact, setShowContact] = useState(false);
+
+  if (showContact) {
+    return (
+      <ContactView
+        userEmail={user.email ?? ''}
+        userName={user.name}
+        onBack={() => setShowContact(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-[#e5e2e1] pt-24 pb-36 px-5 max-w-lg mx-auto relative overflow-x-hidden">
       <Header
@@ -193,6 +206,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <svg className="w-5 h-5 text-[#d2c4b3]/60 group-hover:text-[#f2c377]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg>
             </button>
           </div>
+
+          {/* Contact Us */}
+          <button
+            onClick={() => setShowContact(true)}
+            className="w-full glass-surface rounded-xl px-5 py-3.5 flex items-center justify-between hover:bg-[#353534]/20 transition-all group text-left"
+          >
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-[#f2c377]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+              </svg>
+              <span className="font-body-lg text-base text-[#e5e2e1]">Contact Us</span>
+            </div>
+            <svg className="w-5 h-5 text-[#d2c4b3]/60 group-hover:text-[#f2c377]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
 
           {/* Sign Out Button */}
           <button
