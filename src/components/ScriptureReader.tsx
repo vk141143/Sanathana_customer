@@ -11,6 +11,7 @@ import {
   SlokaMetadata,
   FALLBACK_SCRIPTURE_IMAGE,
 } from '../lib/scriptureLibrary';
+import { TranslationAudioControl } from './TranslationAudioControl';
 
 interface ScriptureReaderProps {
   bookmarks: string[];
@@ -554,28 +555,38 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
         <BackBtn onClick={handleBackToSlokas} label={selectedChapter?.title ?? 'Slokas'} />
 
         {/* Language selector */}
-        <div className="relative" ref={langDropdownRef}>
-          <button
-            onClick={() => setShowLangDropdown(v => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1c1b1b] border border-[#f2c377]/30 rounded-full text-[#f2c377] text-xs font-cinzel hover:border-[#f2c377]/60 transition-colors"
-          >
-            {getLanguageLabel(selectedLanguage)}
-            <svg className={`w-3 h-3 transition-transform ${showLangDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-              <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          {showLangDropdown && (
-            <div className="absolute right-0 top-full mt-1 w-36 bg-[#1c1b1b] border border-[#f2c377]/30 rounded-xl shadow-2xl z-[100] overflow-hidden">
-              {LANGS.map(lang => (
-                <button
-                  key={lang}
-                  onClick={() => handleLanguageChange(lang)}
-                  className={`w-full text-left px-4 py-2.5 text-xs transition-colors ${selectedLanguage === lang ? 'bg-[#f2c377]/15 text-[#f2c377] font-semibold' : 'text-[#d2c4b3] hover:bg-[#f2c377]/10'}`}
-                >
-                  {getLanguageLabel(lang)}
-                </button>
-              ))}
-            </div>
+        <div className="flex items-center gap-2">
+          <div className="relative" ref={langDropdownRef}>
+            <button
+              onClick={() => setShowLangDropdown(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1c1b1b] border border-[#f2c377]/30 rounded-full text-[#f2c377] text-xs font-cinzel hover:border-[#f2c377]/60 transition-colors"
+            >
+              {getLanguageLabel(selectedLanguage)}
+              <svg className={`w-3 h-3 transition-transform ${showLangDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            {showLangDropdown && (
+              <div className="absolute right-0 top-full mt-1 w-36 bg-[#1c1b1b] border border-[#f2c377]/30 rounded-xl shadow-2xl z-[100] overflow-hidden">
+                {LANGS.map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => handleLanguageChange(lang)}
+                    className={`w-full text-left px-4 py-2.5 text-xs transition-colors ${selectedLanguage === lang ? 'bg-[#f2c377]/15 text-[#f2c377] font-semibold' : 'text-[#d2c4b3] hover:bg-[#f2c377]/10'}`}
+                  >
+                    {getLanguageLabel(lang)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {currentSloka && (
+            <TranslationAudioControl
+              key={`${currentSloka.id}:${selectedLanguage}`}
+              slokaId={currentSloka.id}
+              language={selectedLanguage}
+              translation={langData.translation}
+            />
           )}
         </div>
       </header>
@@ -658,7 +669,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
             {langData.explanation && <ContentBlock label="Explanation" text={langData.explanation} />}
             {langData.example && <ContentBlock label="Example" text={langData.example} italic />}
 
-            {!langData.translation && !langData.meaning && !langData.explanation && (
+            {!langData.translation && (
               <div className="bg-[#1c1b1b] border border-[#4e4539]/20 rounded-xl p-4 text-center">
                 <p className="text-[#d2c4b3]/40 text-xs">
                   Translation not available in {getLanguageLabel(selectedLanguage)}.
