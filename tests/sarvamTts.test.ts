@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
+import { createHarvedCorsMiddleware } from '../server/cors';
 import {
   createAudioCacheKey,
   getSarvamLanguageCode,
@@ -15,6 +16,17 @@ import {
 } from '../server/sarvamTtsRouter';
 
 const servers: Array<ReturnType<express.Express['listen']>> = [];
+
+async function withCorsServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
+  const app = express();
+  app.use(createHarvedCorsMiddleware('https://harved.netlify.app'));
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+  const server = app.listen(0);
+  servers.push(server);
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const address = server.address() as AddressInfo;
+  await run(`http://127.0.0.1:${address.port}`);
+}
 
 async function withTtsServer(
   dependencies: SarvamTtsDependencies,
@@ -34,6 +46,28 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
   })));
+});
+
+test('CORS permits only configured Netlify origin and required API headers', async () => {
+  await withCorsServer(async url => {
+    const preflight = await fetch(`${url}/api/tts/translation-audio`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://harved.netlify.app',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+      },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://harved.netlify.app');
+    assert.match(preflight.headers.get('access-control-allow-headers') ?? '', /Authorization/i);
+    assert.match(preflight.headers.get('access-control-allow-headers') ?? '', /Content-Type/i);
+
+    const disallowed = await fetch(`${url}/api/health`, {
+      headers: { Origin: 'https://untrusted.example' },
+    });
+    assert.equal(disallowed.status, 403);
+  });
 });
 
 function makeDependencies(overrides: Partial<SarvamTtsDependencies> = {}) {

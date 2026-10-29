@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { signOut } from 'firebase/auth';
+import { auth } from './lib/firebase';
+import { chantApi, type ChantMe } from './lib/chant';
 import { NavTab, UserProfile, SadhanaTask } from './types';
 import { TEMPLES_DATA, SPIRITUAL_EVENTS, EMOTION_HEALING_CATEGORIES } from './data/temples';
 import { DEFAULT_SADHANA_TASKS } from './data/sadhana';
@@ -88,6 +91,27 @@ export default function App() {
 
   // Sync state to local storage
   useEffect(() => {
+    let alive = true;
+    async function syncChant() {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+      try {
+        const progress = await chantApi<ChantMe>('/me');
+        if (!alive || auth.currentUser?.uid !== uid) return;
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        const completed = progress.stats.some(day => day.practice_date === today && day.completed_sessions > 0);
+        setUser(previous => ({ ...previous, chantCount: progress.totals.repetitions }));
+        setSadhanaTasks(previous => previous.map(task => task.type === 'chanting' ? { ...task, completed } : task));
+      } catch { /* Chant screens display actionable errors; preserve other Sadhana tasks. */ }
+    }
+    // Public browsing/login never requires the private Chant API. Refresh totals
+    // only after an explicit, successful private operation emits chant-progress.
+    window.addEventListener('chant-progress', syncChant);
+    return () => { alive = false; window.removeEventListener('chant-progress', syncChant); };
+  }, []);
+
+  // Sync state to local storage
+  useEffect(() => {
     localStorage.setItem('sanatana_user', JSON.stringify(user));
   }, [user]);
 
@@ -152,7 +176,7 @@ export default function App() {
 
   const handleCompleteChanting = (count: number) => {
     setUser(prev => ({ ...prev, chantCount: prev.chantCount + count }));
-    if (count >= 108) {
+    if (count > 0) {
       setSadhanaTasks(prev =>
         prev.map(t => (t.type === 'chanting' ? { ...t, completed: true } : t))
       );
@@ -170,7 +194,9 @@ export default function App() {
     alert(`Meditation session completed! You dedicated ${minutes} minutes to inner peace.`);
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await signOut(auth);
+    setIsChantingOpen(false);
     setUser(prev => ({ ...prev, isLoggedIn: false }));
     handleTabChange('auth');
   };
@@ -231,6 +257,8 @@ export default function App() {
       case 'sadhana':
         return (
           <SadhanaTracker
+            onToggleBookmark={handleToggleBookmark}
+            onReadingProgressChange={handleReadingProgressChange}
             tasks={sadhanaTasks}
             user={user}
             onToggleTask={handleToggleTask}
@@ -302,6 +330,8 @@ export default function App() {
       default:
         return (
           <SadhanaTracker
+            onToggleBookmark={handleToggleBookmark}
+            onReadingProgressChange={handleReadingProgressChange}
             tasks={sadhanaTasks}
             user={user}
             onToggleTask={handleToggleTask}
@@ -352,6 +382,7 @@ export default function App() {
       />
 
       <JapaCounterModal
+        preferredLanguage={user.preferred_reading_language}
         isOpen={isChantingOpen}
         onClose={() => setIsChantingOpen(false)}
         onCompleteChanting={handleCompleteChanting}

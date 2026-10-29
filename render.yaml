@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: harved-tts-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.22.2
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: HARVED_ALLOWED_ORIGINS
+        value: https://harved.netlify.app

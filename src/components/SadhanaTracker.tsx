@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { SadhanaTask, NavTab, UserProfile } from '../types';
+import { SadhanaTask, NavTab, UserProfile, ReadingProgress } from '../types';
 import { Header } from './Header';
 import { MeditationView } from './MeditationView';
-import { PracticeView } from './PracticeView';
+import { SadhanaPracticesView } from './SadhanaPracticesView';
 import { JourneyView } from './JourneyView';
 import { DevotionalAudioView } from './audio/DevotionalAudioView';
 
 interface SadhanaTrackerProps {
+  onToggleBookmark?: (id: string) => void;
+  onReadingProgressChange?: (progress: ReadingProgress) => void;
   tasks: SadhanaTask[];
   user: UserProfile;
   onToggleTask: (taskId: string) => void;
@@ -19,11 +21,10 @@ interface SadhanaTrackerProps {
 
 export const SadhanaTracker: React.FC<SadhanaTrackerProps> = ({
   tasks,
+  onReadingProgressChange,
+  onToggleBookmark,
   user,
   onToggleTask,
-  onOpenGratitudeModal,
-  onOpenChantingModal,
-  onOpenAddTaskModal,
   streakDays,
   onTabChange,
 }) => {
@@ -46,11 +47,11 @@ export const SadhanaTracker: React.FC<SadhanaTrackerProps> = ({
   }
   if (showPracticeView) {
     return (
-      <PracticeView
-        onTabChange={tab => { setShowPracticeView(false); if (tab === 'meditation') setShowMeditationView(true); else onTabChange(tab); }}
-        onOpenChantingModal={() => { setShowPracticeView(false); onOpenChantingModal(); }}
-        onOpenGratitudeModal={() => { setShowPracticeView(false); onOpenGratitudeModal(); }}
-        onOpenAddTaskModal={() => { setShowPracticeView(false); onOpenAddTaskModal(); }}
+      <SadhanaPracticesView
+        onReadingProgressChange={onReadingProgressChange}
+        bookmarks={user.bookmarks} onToggleBookmark={onToggleBookmark}
+        onTabChange={tab => { setShowPracticeView(false); onTabChange(tab); }}
+        preferredLanguage={user.preferred_reading_language}
         onBack={() => setShowPracticeView(false)}
       />
     );

@@ -3,6 +3,7 @@ import { UserProfile, NavTab } from '../types';
 import { supabase } from '../lib/supabase';
 import { DevotionalAudioView } from './audio/DevotionalAudioView';
 import { InnerFlameGateway } from './InnerFlameGateway';
+import { ChantHomeSection } from './chant/ChantHomeSection';
 
 interface ContinueReadingInfo {
   scriptureName: string;
@@ -295,6 +296,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </header>
 
         <InnerFlameGateway onAction={handleLotusAction} />
+        <ChantHomeSection onOpen={onOpenChantingModal} />
       </section>
 
       {/* ── TODAY'S VERSE ─────────────────────────────────────────────────── */}

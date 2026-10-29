@@ -1,5 +1,6 @@
 import { LoaderCircle, Pause, Play, RotateCcw, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { API_BASE_URL } from '../lib/api';
 import { auth } from '../lib/firebase';
 
 interface TranslationAudioControlProps {
@@ -73,7 +74,7 @@ export function TranslationAudioControl({
       const user = auth.currentUser;
       if (!user) throw new Error('Sign in to listen to translations.');
       const token = await user.getIdToken();
-      const response = await fetch('/api/tts/translation-audio', {
+      const response = await fetch(`${API_BASE_URL}/api/tts/translation-audio`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,

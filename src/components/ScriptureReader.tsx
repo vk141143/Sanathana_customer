@@ -12,8 +12,10 @@ import {
   FALLBACK_SCRIPTURE_IMAGE,
 } from '../lib/scriptureLibrary';
 import { TranslationAudioControl } from './TranslationAudioControl';
+import type { PracticeReading } from '../services/sadhana/practiceReading';
 
 interface ScriptureReaderProps {
+  initialSelection?: PracticeReading;
   bookmarks: string[];
   onToggleBookmark: (verseId: string) => void;
   onTabChange: (tab: NavTab) => void;
@@ -71,18 +73,19 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   readingProgress,
   onPreferredLanguageChange,
   onReadingProgressChange,
+  initialSelection,
 }) => {
-  const [screen, setScreen] = useState<Screen>('scriptures');
+  const [screen, setScreen] = useState<Screen>(initialSelection ? 'reader' : 'scriptures');
 
   // Data
   const [scriptures, setScriptures] = useState<PublishedScripture[]>([]);
   const [chapters, setChapters] = useState<PublishedChapter[]>([]);
-  const [slokas, setSlokas] = useState<SlokaMetadata[]>([]);
+  const [slokas, setSlokas] = useState<SlokaMetadata[]>(initialSelection?.slokas ?? []);
   const [verseJson, setVerseJson] = useState<any>(null);
 
   // Selection
-  const [selectedScripture, setSelectedScripture] = useState<PublishedScripture | null>(null);
-  const [selectedChapter, setSelectedChapter] = useState<PublishedChapter | null>(null);
+  const [selectedScripture, setSelectedScripture] = useState<PublishedScripture | null>(initialSelection?.scripture ?? null);
+  const [selectedChapter, setSelectedChapter] = useState<PublishedChapter | null>(initialSelection?.chapter ?? null);
   const [selectedSlokaIdx, setSelectedSlokaIdx] = useState(0);
 
   // Loading / error

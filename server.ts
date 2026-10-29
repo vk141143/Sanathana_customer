@@ -7,9 +7,13 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { createClient } from '@supabase/supabase-js';
 import { createAudioCache } from './server/audioCache';
+import { chantConfigurationIssue, createChantRouter } from './server/chantRouter';
+import { createHarvedCorsMiddleware } from './server/cors';
 import { createSarvamTtsRouter, synthesizeSarvamAudio } from './server/sarvamTtsRouter';
 
 dotenv.config({ path: ['.env.local', '.env'] });
+const chantSetupIssue = chantConfigurationIssue();
+if (chantSetupIssue) console.warn(`Private Chant features unavailable (public catalogue uses Supabase directly): ${chantSetupIssue}`);
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -33,9 +37,11 @@ function getAiClient(): GoogleGenAI {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const port = Number(process.env.PORT ?? 3000);
 
+  app.use(createHarvedCorsMiddleware());
   app.use(express.json());
+  app.use('/api/chant', createChantRouter());
 
   app.use('/api/tts', createSarvamTtsRouter({
     verifyIdToken: async token => {
@@ -153,8 +159,8 @@ Include 1 relevant Sanskrit shloka (with translation) and 2 concise action point
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SANATANA server running on http://localhost:${PORT}`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`SANATANA server running on port ${port}`);
   });
 }
 
