@@ -1,10 +1,11 @@
 import React from 'react';
 import { NavTab } from '../types';
+import type { HomeRevealPhase } from '../lib/homeHeroSession';
 
 interface BottomNavProps {
   currentTab: NavTab;
   onTabChange: (tab: NavTab) => void;
-  homeRevealComplete?: boolean;
+  homeRevealState?: HomeRevealPhase;
 }
 
 interface IconProps {
@@ -179,7 +180,7 @@ const NotchBar: React.FC<{ color: string }> = ({ color }) => {
 export const BottomNav: React.FC<BottomNavProps> = ({
   currentTab,
   onTabChange,
-  homeRevealComplete,
+  homeRevealState = 'settled',
 }) => {
   if (currentTab === 'auth') return null;
 
@@ -189,11 +190,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto"
       data-home-reveal={
-        currentTab !== 'home' ? 'inactive' : homeRevealComplete ? 'complete' : 'pending'
+        currentTab !== 'home' ? 'inactive' : homeRevealState
       }
-      aria-hidden={currentTab === 'home' && !homeRevealComplete}
+      aria-hidden={currentTab === 'home' && homeRevealState === 'pending'}
       ref={element => {
-        if (element) element.inert = currentTab === 'home' && !homeRevealComplete;
+        if (element) element.inert = currentTab === 'home' && homeRevealState === 'pending';
       }}
       style={{
         height: `calc(82px + env(safe-area-inset-bottom))`,

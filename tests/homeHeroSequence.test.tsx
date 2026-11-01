@@ -237,6 +237,7 @@ test('falls back to the existing hero if any frame fails to decode', async () =>
       );
       await settlePreload();
     });
+
     FakeImage.instances
       .filter(image => !image.src.includes('frame_0020'))
       .forEach(image => image.finishDecode());
@@ -246,6 +247,29 @@ test('falls back to the existing hero if any frame fails to decode', async () =>
     assert.equal(container.querySelector('img')?.getAttribute('src'), heroUrl);
     assert.equal(browser.animationFrames.size, 0);
     assert.equal(completionCount, 1, 'fallback completes the Home UI reveal without looping');
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    browser.restore();
+  }
+});
+
+test('does not replay the frames when the authenticated session already completed playback', async () => {
+  const browser = createBrowser();
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  const heroUrl = 'https://example.test/hero.webp';
+  try {
+    await act(async () => {
+      root.render(<HomeHeroSequence finalImageUrl={heroUrl} playAnimation={false} />);
+      await settlePreload();
+    });
+
+    assert.equal(FakeImage.instances.length, 0, 'returning to Home does not preload or replay frames');
+    assert.equal(container.querySelectorAll('img').length, 1);
+    assert.equal(container.querySelector('img')?.getAttribute('src'), '/home/frame_0040.jpg');
+    assert.equal(browser.animationFrames.size, 0);
   } finally {
     await act(async () => root.unmount());
     container.remove();

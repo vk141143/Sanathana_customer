@@ -359,30 +359,6 @@
   mix-blend-mode: screen;
 }
 
-.home-sacred-mandala {
-  position: absolute;
-  z-index: 2;
-  top: -12%;
-  left: 50%;
-  width: min(92vw, 420px);
-  height: auto;
-  overflow: visible;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-.home-mandala-rotation {
-  transform-box: fill-box;
-  transform-origin: center;
-  opacity: 0.75;
-}
-
-.home-mandala-stroke {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-}
-
 .home-reveal-hidden {
   opacity: 0;
   pointer-events: none;
@@ -394,47 +370,35 @@
   transform: translateY(7px);
 }
 
-.home-view[data-home-reveal="complete"] .home-divine-glow {
+.home-view[data-home-reveal="revealing"] .home-divine-glow {
   animation: home-divine-glow 2.2s ease-out 0.08s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-sacred-mandala {
-  animation: home-mandala-opacity 1.4s ease-out 0.1s both;
-}
-
-.home-view[data-home-reveal="complete"] .home-mandala-rotation {
-  animation: home-mandala-settle 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both;
-}
-
-.home-view[data-home-reveal="complete"] .home-mandala-stroke {
-  animation: home-mandala-draw 0.9s ease-out both;
-}
-
-.home-view[data-home-reveal="complete"] .home-reveal-logo {
+.home-view[data-home-reveal="revealing"] .home-reveal-logo {
   animation: home-reveal-fade 0.65s ease-out 0.12s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-reveal-header {
+.home-view[data-home-reveal="revealing"] .home-reveal-header {
   animation: home-reveal-fade 0.55s ease-out 0.08s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-reveal-title {
+.home-view[data-home-reveal="revealing"] .home-reveal-title {
   animation: home-title-spacing 0.85s ease-out both;
 }
 
-.home-view[data-home-reveal="complete"] .home-title-letter {
+.home-view[data-home-reveal="revealing"] .home-title-letter {
   animation: home-title-letter 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-.home-view[data-home-reveal="complete"] .home-reveal-subtitle {
+.home-view[data-home-reveal="revealing"] .home-reveal-subtitle {
   animation: home-reveal-fade-up 0.5s ease-out 1s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-reveal-bell {
+.home-view[data-home-reveal="revealing"] .home-reveal-bell {
   animation: home-reveal-fade-up 0.6s ease-out 1.2s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-verse-reveal {
+.home-view[data-home-reveal="revealing"] .home-verse-reveal {
   animation: home-verse-unfold 0.85s cubic-bezier(0.2, 0.7, 0.2, 1) 1.48s both;
 }
 
@@ -449,7 +413,7 @@
   clip-path: inset(0 100% 0 0);
 }
 
-.home-view[data-home-reveal="complete"] .home-verse-reveal::before {
+.home-view[data-home-reveal="revealing"] .home-verse-reveal::before {
   animation: home-verse-border 1s ease-out 1.48s both;
 }
 
@@ -458,45 +422,45 @@
   transform-origin: top;
 }
 
-.home-view[data-home-reveal="complete"] .home-verse-accent {
+.home-view[data-home-reveal="revealing"] .home-verse-accent {
   animation: home-verse-accent 0.75s ease-out 1.8s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-verse-label {
+.home-view[data-home-reveal="revealing"] .home-verse-label {
   animation: home-reveal-fade 0.45s ease-out 1.7s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-verse-content {
+.home-view[data-home-reveal="revealing"] .home-verse-content {
   opacity: 0;
   transform: translateY(7px);
   animation: home-reveal-fade-up 0.65s ease-out 2s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-verse-bookmark {
+.home-view[data-home-reveal="revealing"] .home-verse-bookmark {
   animation: home-reveal-fade 0.5s ease-out 2.55s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-reveal-sadhana {
+.home-view[data-home-reveal="revealing"] .home-reveal-sadhana {
   animation: home-reveal-fade-up 0.75s ease-out 2.7s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-sadhana-reveal {
+.home-view[data-home-reveal="revealing"] .home-sadhana-reveal {
   animation: home-reveal-fade-up 0.75s ease-out 2.85s both;
 }
 
-.home-view[data-home-reveal="complete"] .home-continue-reading {
+.home-view[data-home-reveal="revealing"] .home-continue-reading {
   animation-delay: 3s;
 }
 
-.home-view[data-home-reveal="complete"] .home-discover {
+.home-view[data-home-reveal="revealing"] .home-discover {
   animation-delay: 3.15s;
 }
 
-.home-view[data-home-reveal="complete"] .home-daily-streak {
+.home-view[data-home-reveal="revealing"] .home-daily-streak {
   animation-delay: 3.3s;
 }
 
-.home-view[data-home-reveal="complete"] .home-content-reveal {
+.home-view[data-home-reveal="revealing"] .home-content-reveal {
   animation-name: home-reveal-fade-up;
   animation-duration: 0.7s;
   animation-timing-function: ease-out;
@@ -509,7 +473,7 @@
   pointer-events: none;
 }
 
-nav[data-home-reveal="complete"] {
+nav[data-home-reveal="revealing"] {
   animation: home-nav-reveal 0.7s ease-out 3.35s both;
 }
 
@@ -518,24 +482,50 @@ nav[data-home-reveal="pending"] {
   pointer-events: none;
 }
 
+.home-view[data-home-reveal="settled"] .home-reveal-hidden,
+.home-view[data-home-reveal="settled"] .home-title-letter,
+.home-view[data-home-reveal="settled"] .home-content-reveal {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  animation: none !important;
+}
+
+.home-view[data-home-reveal="settled"] .home-divine-glow {
+  opacity: 0.11;
+}
+
+.home-view[data-home-reveal="settled"] .home-verse-reveal {
+  opacity: 1;
+  clip-path: none;
+  animation: none !important;
+}
+
+.home-view[data-home-reveal="settled"] .home-verse-reveal::before {
+  clip-path: inset(0);
+  animation: none !important;
+}
+
+.home-view[data-home-reveal="settled"] .home-verse-accent {
+  transform: scaleY(1);
+  animation: none !important;
+}
+
+.home-view[data-home-reveal="settled"] .home-verse-content {
+  opacity: 1;
+  transform: none;
+  animation: none !important;
+}
+
+nav[data-home-reveal="settled"] {
+  opacity: 1;
+  animation: none !important;
+}
+
 @keyframes home-divine-glow {
   0% { opacity: 0; }
   42% { opacity: 0.28; }
   100% { opacity: 0.11; }
-}
-
-@keyframes home-mandala-opacity {
-  from { opacity: 0; }
-  to { opacity: 0.29; }
-}
-
-@keyframes home-mandala-settle {
-  from { transform: rotate(-3deg); }
-  to { transform: rotate(0deg); }
-}
-
-@keyframes home-mandala-draw {
-  to { stroke-dashoffset: 0; }
 }
 
 @keyframes home-reveal-fade {
@@ -577,10 +567,6 @@ nav[data-home-reveal="pending"] {
 
 @media (prefers-reduced-motion: reduce) {
   .home-divine-glow,
-  .home-sacred-mandala {
-    display: none !important;
-  }
-
   .home-view .home-reveal-hidden,
   .home-view .home-title-letter,
   nav[data-home-reveal="pending"] {
@@ -617,7 +603,7 @@ nav[data-home-reveal="pending"] {
   .home-view .home-reveal-sadhana,
   .home-view .home-sadhana-reveal,
   .home-view .home-content-reveal,
-  nav[data-home-reveal="complete"] {
+  nav[data-home-reveal="revealing"] {
     animation: none !important;
   }
 }

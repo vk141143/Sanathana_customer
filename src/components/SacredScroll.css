@@ -1,0 +1,52 @@
+.sacred-reader { margin: 0 0 24px; }
+.sacred-caption { display:flex; justify-content:center; gap:16px; margin:0 0 24px; color:#bd955b; font:10px 'Cinzel',serif; letter-spacing:.2em; text-transform:uppercase; }
+.sacred-stage { transition:opacity 220ms ease, transform 220ms ease; }
+.sacred-stage.is-closing { opacity:0; transform:translateY(-6px); }
+.sacred-scroll { position:relative; isolation:isolate; margin:0 6px; color:#35220f; }
+.sacred-paper { position:absolute; inset:0; z-index:-1; border:1px solid #b08846; background:repeating-linear-gradient(2deg,transparent 0 3px,#71451708 4px 5px),radial-gradient(ellipse at 50% 20%,#f5e5bd,#d8b775 80%,#ad7e3c); box-shadow:inset 0 0 32px #83501c55,0 8px 36px #b87a2520; }
+.sacred-paper::after { content:''; position:absolute; inset:9px; border:1px solid #88602f77; outline:1px solid #88602f33; outline-offset:3px; pointer-events:none; }
+.sacred-ink { padding:30px clamp(22px,6vw,36px) 20px; user-select:text; overflow-wrap:anywhere; }
+.sacred-eyebrow { text-align:center; font-size:10px; letter-spacing:.09em; margin-bottom:20px; color:#68421d; }
+.sacred-verse { font-size:clamp(21px,5.6vw,27px); line-height:1.95; text-align:center; }
+.sacred-line { display:block; white-space:pre-wrap; animation:sacred-line-in 500ms both; animation-delay:var(--line-delay); }
+.sacred-transliteration { white-space:pre-wrap; font-size:14px; line-height:1.8; font-style:italic; text-align:center; margin-top:20px; animation:sacred-line-in 600ms 600ms both; }
+.sacred-prose { font-size:17px; line-height:1.95; animation:sacred-line-in 550ms 250ms both; }
+.sacred-prose p { white-space:pre-wrap; }
+.sacred-prose h3 { margin:22px 0 6px; font-weight:600; }
+.sacred-language { font-size:12px; color:#69441e; margin-bottom:12px; }
+.sacred-seal { text-align:center; font-size:24px; color:#8e622e; margin-top:18px; }
+.sacred-roller { position:absolute; z-index:2; border:1px solid #95672c; border-radius:7px; box-shadow:0 3px 9px #0007; pointer-events:none; }
+.is-horizontal .sacred-paper { animation:sacred-open-x 800ms cubic-bezier(.22,.7,.2,1) both; }
+.is-horizontal .sacred-roller { top:-7px; bottom:-7px; width:15px; background:linear-gradient(90deg,#523216,#c09a56 28%,#f1d99a 48%,#9e7234 77%,#432b16); }
+.is-horizontal .sacred-roller-start { left:-7px; animation:sacred-roll-left 800ms cubic-bezier(.22,.7,.2,1) both; }
+.is-horizontal .sacred-roller-end { right:-7px; animation:sacred-roll-right 800ms cubic-bezier(.22,.7,.2,1) both; }
+.is-horizontal .sacred-ink { animation:sacred-open-x 800ms cubic-bezier(.22,.7,.2,1) both; }
+.is-vertical .sacred-paper,.is-vertical .sacred-ink { animation:sacred-open-y 850ms cubic-bezier(.22,.7,.2,1) both; }
+.is-vertical .sacred-roller { height:15px; left:-7px; right:-7px; background:linear-gradient(#523216,#d2ad68 28%,#f1d99a 48%,#9e7234 77%,#432b16); }
+.is-vertical .sacred-roller-start { top:-7px; }
+.is-vertical .sacred-roller-end { bottom:-7px; animation:sacred-roll-down 850ms cubic-bezier(.22,.7,.2,1) both; }
+.sacred-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:14px; margin-top:28px; }
+.sacred-menu-trigger { display:grid; place-items:center; width:44px; height:44px; border-radius:50%; border:1px solid #ae8548; background:#1c1712; color:#f2c377; box-shadow:0 0 18px #dca44119; transition:transform 160ms,opacity 160ms; }
+.sacred-menu-trigger svg { display:none; }
+.sacred-menu-trigger::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; box-shadow:9px 0 currentColor,0 9px currentColor,9px 9px currentColor; transform:translate(-4.5px,-4.5px); }
+.sacred-menu-trigger:active { transform:scale(.93); opacity:.8; }
+.sacred-return { display:flex; align-items:center; gap:7px; color:#e5bb7a; font-size:12px; padding:10px; }
+.sacred-actions { flex-basis:100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:12px; border:1px solid #76582e88; border-radius:16px; background:#191511; animation:sacred-line-in 180ms both; }
+.sacred-actions button { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:14px 3px; min-height:82px; border-radius:10px; color:#eac58d; font-size:11px; }
+.sacred-actions button:hover,.sacred-actions button[aria-pressed=true] { background:#f2c37712; }
+.sacred-actions button:disabled { color:#a99a83; cursor:not-allowed; }
+.sacred-actions small { font-size:9px; }
+.sacred-tools button:focus-visible { outline:2px solid #f2c377; outline-offset:3px; }
+.reader-listening { display:none; color:#f2c377; font-size:11px; align-items:center; gap:7px; }
+.scripture-cinematic:has(button[aria-label="Pause Sanskrit audio"]) .reader-listening,
+.scripture-cinematic:has(button[aria-label="Pause translation audio"]) .reader-listening { display:flex; }
+.reader-listening::before { content:''; width:6px; height:6px; border-radius:50%; background:#f2c377; box-shadow:0 0 10px #f2c377; }
+@keyframes sacred-open-x { from { clip-path:inset(0 50%); } to { clip-path:inset(0 0); } }
+@keyframes sacred-open-y { from { clip-path:inset(0 0 100%); } to { clip-path:inset(0); } }
+@keyframes sacred-roll-left { from { left:calc(50% - 7px); } to { left:-7px; } }
+@keyframes sacred-roll-right { from { right:calc(50% - 7px); } to { right:-7px; } }
+@keyframes sacred-roll-down { from { bottom:calc(100% - 7px); } to { bottom:-7px; } }
+@keyframes sacred-line-in { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion:reduce) {
+  .sacred-reader *, .sacred-reader *::before { animation:none !important; transition:none !important; }
+}

@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { DevotionalAudioView } from './audio/DevotionalAudioView';
 import { InnerFlameGateway } from './InnerFlameGateway';
 import { ChantHomeSection } from './chant/ChantHomeSection';
-import { HomeHeroSequence, prefersReducedMotion } from './HomeHeroSequence';
+import { HomeHeroSequence } from './HomeHeroSequence';
+import type { HomeRevealPhase } from '../lib/homeHeroSession';
 
 interface ContinueReadingInfo {
   scriptureName: string;
@@ -23,6 +24,9 @@ interface HomeViewProps {
   onOpenChantingModal: () => void;
   userEmail?: string;
   readingProgress?: { scripture_id: string; chapter_id: string; verse_number: number; language: string } | null;
+  playInitialHeroAnimation: boolean;
+  initialRevealPhase: HomeRevealPhase;
+  onHeroAnimationStarted: () => void;
   onRevealComplete: () => void;
 }
 
@@ -37,74 +41,6 @@ const getSeenIds = (): Set<string> => {
   try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); }
 };
 
-function HomeMandala() {
-  const rays = Array.from({ length: 24 }, (_, index) => index * 15);
-  const petals = Array.from({ length: 12 }, (_, index) => index * 30);
-
-  return (
-    <svg
-      className="home-sacred-mandala"
-      viewBox="0 0 360 360"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <defs>
-        <mask id="home-mandala-face-clear">
-          <rect width="360" height="360" fill="white" />
-          <circle cx="180" cy="180" r="82" fill="black" />
-        </mask>
-      </defs>
-      <g
-        className="home-mandala-rotation"
-        fill="none"
-        stroke="#e6c27a"
-        strokeWidth="0.7"
-        mask="url(#home-mandala-face-clear)"
-      >
-        {[74, 92, 116, 144, 158].map((radius, index) => (
-          <circle
-            key={radius}
-            className="home-mandala-stroke"
-            cx="180"
-            cy="180"
-            r={radius}
-            pathLength="1"
-            style={{ animationDelay: `${0.12 + index * 0.1}s` }}
-          />
-        ))}
-        {rays.map((rotation, index) => (
-          <line
-            key={rotation}
-            className="home-mandala-stroke"
-            x1="180"
-            y1="126"
-            x2="180"
-            y2={index % 2 === 0 ? 164 : 154}
-            pathLength="1"
-            transform={`rotate(${rotation} 180 180)`}
-            style={{ animationDelay: `${0.42 + (index % 6) * 0.04}s` }}
-          />
-        ))}
-        {petals.map(rotation => (
-          <path
-            key={rotation}
-            className="home-mandala-stroke"
-            d="M180 94 C155 111 157 139 180 153 C203 139 205 111 180 94Z"
-            pathLength="1"
-            transform={`rotate(${rotation} 180 180)`}
-            style={{ animationDelay: `${0.5 + (rotation % 90) * 0.001}s` }}
-          />
-        ))}
-        <path
-          className="home-mandala-stroke"
-          d="M180 160 C169 169 169 191 180 200 C191 191 191 169 180 160Z"
-          pathLength="1"
-        />
-      </g>
-    </svg>
-  );
-}
-
 // ── Main HomeView ─────────────────────────────────────────────────────────────
 export const HomeView: React.FC<HomeViewProps> = ({
   user,
@@ -114,10 +50,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenChantingModal,
   userEmail,
   readingProgress,
+  playInitialHeroAnimation,
+  initialRevealPhase,
+  onHeroAnimationStarted,
   onRevealComplete,
 }) => {
   const [showAudio, setShowAudio] = useState(false);
-  const [homeRevealed, setHomeRevealed] = useState(prefersReducedMotion);
+  const [runHeroAnimation] = useState(playInitialHeroAnimation);
+  const [revealPhase, setRevealPhase] = useState<HomeRevealPhase>(initialRevealPhase);
   const [dailyQuote, setDailyQuote] = useState<DailyQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -126,12 +66,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [heroBannerImage, setHeroBannerImage] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(null);
   const currentQuoteTitle = useRef<string | null>(null);
+  const homeRevealed = revealPhase !== 'pending';
   const revealCompletedRef = useRef(homeRevealed);
+
+  useEffect(() => {
+    if (runHeroAnimation) onHeroAnimationStarted();
+  }, [onHeroAnimationStarted, runHeroAnimation]);
 
   const completeHomeReveal = useCallback(() => {
     if (revealCompletedRef.current) return;
     revealCompletedRef.current = true;
-    setHomeRevealed(true);
+    setRevealPhase('revealing');
     onRevealComplete();
   }, [onRevealComplete]);
 
@@ -260,7 +205,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   return (
     <div
       className="home-view min-h-screen bg-[#080604] text-[#e5e7eb] font-garamond pb-28 max-w-md mx-auto relative select-none overflow-x-hidden"
-      data-home-reveal={homeRevealed ? 'complete' : 'pending'}
+      data-home-reveal={revealPhase}
     >
       {showAudio && <DevotionalAudioView onBack={() => setShowAudio(false)} />}
 
@@ -271,17 +216,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
       >
         {/* Hero banner from Supabase */}
         <div className="absolute inset-0">
-          {heroBannerImage ? (
+          {heroBannerImage || !runHeroAnimation ? (
             <HomeHeroSequence
-              finalImageUrl={heroBannerImage}
+              finalImageUrl={heroBannerImage ?? ''}
               onComplete={completeHomeReveal}
+              playAnimation={runHeroAnimation}
             />
           ) : (
             <div className="absolute inset-0" style={{ background: 'linear-gradient(160deg, #1a0e06 0%, #080604 100%)' }} />
           )}
         </div>
         <div className="home-divine-glow" aria-hidden="true" />
-        <HomeMandala />
 
         {/* Cinematic vignette edges */}
         <div className="absolute inset-0 pointer-events-none" style={{

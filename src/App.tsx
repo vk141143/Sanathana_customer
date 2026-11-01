@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useReducer } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { chantApi, type ChantMe } from './lib/chant';
@@ -11,6 +11,7 @@ import { TempleJourney } from './components/TempleJourney';
 import { BottomNav } from './components/BottomNav';
 import { HomeView } from './components/HomeView';
 import { prefersReducedMotion } from './components/HomeHeroSequence';
+import { homeHeroSessionReducer, INITIAL_HOME_HERO_SESSION } from './lib/homeHeroSession';
 import { ScriptureReader } from './components/ScriptureReader';
 import { SadhanaTracker } from './components/SadhanaTracker';
 import { MeditationView } from './components/MeditationView';
@@ -43,7 +44,10 @@ export default function App() {
     return true;
   });
   const [currentTab, setCurrentTab] = useState<NavTab>('home');
-  const [homeRevealComplete, setHomeRevealComplete] = useState(prefersReducedMotion);
+  const [homeHeroSession, dispatchHomeHeroSession] = useReducer(
+    homeHeroSessionReducer,
+    INITIAL_HOME_HERO_SESSION,
+  );
   const [showTempleMap, setShowTempleMap] = useState<boolean>(false);
 
   // Persistent User Profile State
@@ -123,12 +127,18 @@ export default function App() {
 
   const handleTabChange = (tab: NavTab) => {
     if (tab !== 'festivals') setSelectedFestivalId(null);
-    if (tab === 'home' && currentTab !== 'home') setHomeRevealComplete(prefersReducedMotion());
+    if (currentTab === 'home' && tab !== 'home') {
+      dispatchHomeHeroSession({ type: 'left-home' });
+    }
     setCurrentTab(tab);
   };
 
+  const handleHomeAnimationStarted = useCallback(() => {
+    dispatchHomeHeroSession({ type: 'animation-started' });
+  }, []);
+
   const handleHomeRevealComplete = useCallback(() => {
-    setHomeRevealComplete(true);
+    dispatchHomeHeroSession({ type: 'reveal-completed' });
   }, []);
 
   const handleToggleTask = (taskId: string) => {
@@ -205,11 +215,16 @@ export default function App() {
     await signOut(auth);
     setIsChantingOpen(false);
     setUser(prev => ({ ...prev, isLoggedIn: false }));
+    dispatchHomeHeroSession({ type: 'signed-out' });
     handleTabChange('auth');
   };
 
   const handleSignInSuccess = (userData: Partial<UserProfile>) => {
     setUser(prev => ({ ...prev, ...userData, isLoggedIn: true, title: 'Seeker of Truth' }));
+    dispatchHomeHeroSession({
+      type: 'authenticated',
+      reducedMotion: prefersReducedMotion(),
+    });
   };
 
   const renderActiveTab = () => {
@@ -245,6 +260,9 @@ export default function App() {
             onOpenChantingModal={() => setIsChantingOpen(true)}
             userEmail={user.email}
             readingProgress={user.reading_progress}
+            playInitialHeroAnimation={homeHeroSession.animationPending}
+            initialRevealPhase={homeHeroSession.revealPhase}
+            onHeroAnimationStarted={handleHomeAnimationStarted}
             onRevealComplete={handleHomeRevealComplete}
           />
         );
@@ -382,7 +400,7 @@ export default function App() {
         <BottomNav
           currentTab={currentTab}
           onTabChange={handleTabChange}
-          homeRevealComplete={homeRevealComplete}
+          homeRevealState={homeHeroSession.revealPhase}
         />
       )}
 

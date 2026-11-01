@@ -9,6 +9,7 @@ export const HOME_HERO_FRAME_DURATION_MS = 1000 / 15;
 interface HomeHeroSequenceProps {
   finalImageUrl: string;
   onComplete?: () => void;
+  playAnimation?: boolean;
 }
 
 export function prefersReducedMotion(): boolean {
@@ -35,8 +36,15 @@ function preloadImage(source: string, images: HTMLImageElement[]): Promise<boole
   });
 }
 
-export function HomeHeroSequence({ finalImageUrl, onComplete }: HomeHeroSequenceProps) {
-  const [frameSource, setFrameSource] = useState<string | null>(null);
+export function HomeHeroSequence({
+  finalImageUrl,
+  onComplete,
+  playAnimation = true,
+}: HomeHeroSequenceProps) {
+  const finalFrame = HOME_HERO_FRAME_SOURCES[HOME_HERO_FRAME_SOURCES.length - 1];
+  const [frameSource, setFrameSource] = useState<string | null>(() =>
+    playAnimation ? null : finalFrame
+  );
   const reducedMotion = useRef(prefersReducedMotion()).current;
   const hasPlayed = useRef(false);
   const hasFinished = useRef(false);
@@ -50,6 +58,10 @@ export function HomeHeroSequence({ finalImageUrl, onComplete }: HomeHeroSequence
   } | null>(null);
 
   useEffect(() => {
+    if (!playAnimation) {
+      setFrameSource(finalFrame);
+      return;
+    }
     if (!finalImageUrl || hasPlayed.current || hasFinished.current) return;
 
     const signalCompletion = () => {
@@ -115,7 +127,7 @@ export function HomeHeroSequence({ finalImageUrl, onComplete }: HomeHeroSequence
       cancelled = true;
       if (animationFrame) window.cancelAnimationFrame(animationFrame);
     };
-  }, [finalImageUrl, reducedMotion]);
+  }, [finalFrame, finalImageUrl, playAnimation, reducedMotion]);
 
   return (
     <img

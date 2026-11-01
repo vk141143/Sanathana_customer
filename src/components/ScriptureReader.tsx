@@ -11,6 +11,8 @@ import {
   SlokaMetadata,
   FALLBACK_SCRIPTURE_IMAGE,
 } from '../lib/scriptureLibrary';
+import { SacredScroll } from './SacredScroll';
+import './SacredScroll.css';
 import { TranslationAudioControl } from './TranslationAudioControl';
 import { SlokaAudioControl } from './SlokaAudioControl';
 import { hasSlokaAudio, slokaAudioPlayer } from '../lib/slokaAudio';
@@ -59,13 +61,6 @@ const BackBtn: React.FC<{ onClick: () => void; label: string }> = ({ onClick, la
 );
 
 // ── Content block ─────────────────────────────────────────────────────────────
-const ContentBlock: React.FC<{ label: string; text: string; italic?: boolean }> = ({ label, text, italic }) => (
-  <div className="bg-[#1c1b1b] border border-[#4e4539]/30 rounded-xl p-4 mb-3">
-    <p className="text-[10px] text-[#d2c4b3]/50 uppercase tracking-wider mb-1.5">{label}</p>
-    <p className={`text-[#e5e2e1] text-base leading-relaxed ${italic ? 'italic text-[#d2c4b3]/80' : ''}`}>{text}</p>
-  </div>
-);
-
 const SlokaSanskritPreview: React.FC<{ sloka: SlokaMetadata }> = ({ sloka }) => {
   const [text, setText] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -154,6 +149,8 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   const langDropdownRef = useRef<HTMLDivElement>(null);
+  const translationAudioRef = useRef<HTMLDivElement>(null);
+  const verseRequestRef = useRef(0);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => slokaAudioPlayer.stop(), []);
@@ -203,22 +200,24 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
 
   // ── Fetch single verse JSON from R2 (with in-memory cache) ───────────────
   const loadVerseJson = useCallback(async (sloka: SlokaMetadata) => {
+    const request = ++verseRequestRef.current;
     const cacheKey = sloka.verse_id || sloka.id;
+    setErrorVerse(null);
     if (verseJsonCache.has(cacheKey)) {
       setVerseJson(verseJsonCache.get(cacheKey));
+      setLoadingVerse(false);
       return;
     }
     setLoadingVerse(true);
-    setErrorVerse(null);
     setVerseJson(null);
     try {
       const data = await fetchSlokaJson(sloka.json_url);
       verseJsonCache.set(cacheKey, data);
-      setVerseJson(data);
+      if (request === verseRequestRef.current) setVerseJson(data);
     } catch {
-      setErrorVerse('This verse is temporarily unavailable. Please try again.');
+      if (request === verseRequestRef.current) setErrorVerse('This verse is temporarily unavailable. Please try again.');
     } finally {
-      setLoadingVerse(false);
+      if (request === verseRequestRef.current) setLoadingVerse(false);
     }
   }, []);
 
@@ -226,7 +225,8 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   useEffect(() => {
     if (screen !== 'reader' || slokas.length === 0) return;
     const sloka = slokas[selectedSlokaIdx];
-    if (sloka) loadVerseJson(sloka);
+    if (sloka) void loadVerseJson(sloka);
+    return () => { verseRequestRef.current += 1; };
   }, [screen, selectedSlokaIdx, slokas, loadVerseJson]);
 
   // ── Debounced reading progress save ──────────────────────────────────────
@@ -618,9 +618,29 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   const langData = verseJson?.languages?.[selectedLanguage] ?? {};
   const devanagari: string = verseJson?.sanskrit?.devanagari ?? '';
   const transliteration: string = verseJson?.sanskrit?.transliteration ?? '';
+  const sanskritAudioAvailable = !!currentSloka && hasSlokaAudio({
+    audioUrl: currentSloka.audio_url,
+    audioR2Path: currentSloka.audio_r2_path,
+    audioR2Key: currentSloka.audio_r2_key,
+  }, currentSloka.audio_status);
+  const listen = () => {
+    if (!currentSloka) return;
+    if (sanskritAudioAvailable) {
+      const playback = slokaAudioPlayer.getSnapshot();
+      if (playback.slokaId !== currentSloka.id || !['playing', 'loading'].includes(playback.status)) {
+        void slokaAudioPlayer.toggle(currentSloka.id, {
+          audioUrl: currentSloka.audio_url, audioR2Path: currentSloka.audio_r2_path,
+          audioR2Key: currentSloka.audio_r2_key,
+        });
+      }
+    } else {
+      const button = translationAudioRef.current?.querySelector<HTMLButtonElement>('button');
+      if (button && button.getAttribute('aria-label') !== 'Pause translation audio') button.click();
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#0E0E0E] text-[#e5e2e1] pb-36 max-w-lg mx-auto select-none">
+    <div className="scripture-cinematic min-h-screen bg-[#0E0E0E] text-[#e5e2e1] pb-36 max-w-lg mx-auto">
       {/* Header */}
       <header className="flex items-center justify-between px-4 h-14 fixed top-0 left-0 right-0 z-50 bg-[#0e0e0e]/95 backdrop-blur-xl border-b border-[#4e4539]/20 max-w-lg mx-auto">
         <BackBtn onClick={handleBackToSlokas} label={selectedChapter?.title ?? 'Slokas'} />
@@ -652,12 +672,14 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
             )}
           </div>
           {currentSloka && (
-            <TranslationAudioControl
-              key={`${currentSloka.id}:${selectedLanguage}`}
-              slokaId={currentSloka.id}
-              language={selectedLanguage}
-              translation={langData.translation}
-            />
+            <div ref={translationAudioRef}>
+              <TranslationAudioControl
+                key={`${currentSloka.id}:${selectedLanguage}`}
+                slokaId={currentSloka.id}
+                language={selectedLanguage}
+                translation={langData.translation}
+              />
+            </div>
           )}
         </div>
       </header>
@@ -713,18 +735,23 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
         {/* Verse content */}
         {!loadingVerse && !errorVerse && verseJson && (
           <>
-            {/* Sanskrit */}
-            {devanagari && (
-              <p className="font-sanskrit text-[#f2c377] text-2xl leading-loose text-center whitespace-pre-line mb-3">
-                {devanagari}
-              </p>
-            )}
+            <SacredScroll
+              key={currentSloka?.id}
+              verseLabel={currentSloka?.verse_id || `Verse ${currentSloka?.verse_number}`}
+              sanskrit={devanagari}
+              transliteration={transliteration}
+              language={selectedLanguage}
+              languageLabel={getLanguageLabel(selectedLanguage)}
+              content={langData}
+              bookmarked={isBookmarked}
+              onBookmark={() => currentSloka && onToggleBookmark(currentSloka.verse_id || currentSloka.id)}
+              canListen={sanskritAudioAvailable || Boolean(langData.translation)}
+              listenToSanskrit={sanskritAudioAvailable}
+              onListen={listen}
+            />
+            <div className="flex justify-center mb-3"><span className="reader-listening" role="status">Listening</span></div>
 
-            {currentSloka && hasSlokaAudio({
-              audioUrl: currentSloka.audio_url,
-              audioR2Path: currentSloka.audio_r2_path,
-              audioR2Key: currentSloka.audio_r2_key,
-            }, currentSloka.audio_status) && (
+            {currentSloka && sanskritAudioAvailable && (
               <div className="mb-4 flex justify-center">
                 <SlokaAudioControl
                   key={currentSloka.id}
@@ -738,33 +765,6 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
               </div>
             )}
 
-            {/* Transliteration */}
-            {transliteration && (
-              <p className="text-[#d2c4b3]/70 text-sm italic text-center leading-relaxed whitespace-pre-line mb-5">
-                {transliteration}
-              </p>
-            )}
-
-            <div className="w-12 h-px bg-gradient-to-r from-transparent via-[#f2c377]/30 to-transparent mx-auto mb-6" />
-
-            <p className="text-[#f2c377]/50 text-xs font-cinzel uppercase tracking-widest mb-3">
-              {getLanguageLabel(selectedLanguage)}
-            </p>
-
-            {langData.translation && <ContentBlock label="Translation" text={langData.translation} />}
-            {langData.meaning && langData.meaning !== langData.translation && (
-              <ContentBlock label="Meaning" text={langData.meaning} />
-            )}
-            {langData.explanation && <ContentBlock label="Explanation" text={langData.explanation} />}
-            {langData.example && <ContentBlock label="Example" text={langData.example} italic />}
-
-            {!langData.translation && (
-              <div className="bg-[#1c1b1b] border border-[#4e4539]/20 rounded-xl p-4 text-center">
-                <p className="text-[#d2c4b3]/40 text-xs">
-                  Translation not available in {getLanguageLabel(selectedLanguage)}.
-                </p>
-              </div>
-            )}
           </>
         )}
       </div>
