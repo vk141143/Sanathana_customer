@@ -127,6 +127,10 @@ test('accepts a public HTTPS audio URL directly without requiring an R2 base', (
     () => resolveSlokaAudioUrl('http://media.example/1.wav'),
     /public HTTPS/,
   );
+  assert.throws(
+    () => resolveSlokaAudioUrl('sloka-audio/BG/1/1.wav'),
+    /delivery is not configured/,
+  );
 });
 
 test('one player pauses, resumes, completes and replays the selected Sloka', async () => {

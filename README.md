@@ -33,21 +33,24 @@ After configuring private features, sign in, open Chant and select **Load saved 
 
 ## Scripture translation audio
 
-The verse reader's speaker control sends only the selected language's `languages[code].translation` to the Express API. The API verifies the user's Firebase ID token, loads published verse content through Supabase and its stored R2 JSON URL, and calls Sarvam without exposing its API key to the browser.
+The verse reader's speaker control sends the selected language and Sloka ID to the Netlify Function at `POST /api/tts/translation-audio`. The function verifies the Firebase ID token, selects the published Sloka from Supabase using its anon key and existing RLS policies, fetches the published JSON, and calls Sarvam. The private Sarvam key is read only by the function. The existing Express route uses the same request handler and dependency setup for local development.
 
-Add `SARVAM_API_KEY` and `FIREBASE_PROJECT_ID` to the server's local `.env.local` and production environment. `FIREBASE_PROJECT_ID` must match `VITE_FIREBASE_PROJECT_ID`. The audio cache is held in bounded server memory unless all four private Cloudflare R2 variables in [.env.example](.env.example) are configured; with R2, versioned WAV objects remain private and are streamed through the authenticated API.
+Netlify rewrites `/api/tts/translation-audio` to `/.netlify/functions/translation-audio`; the frontend continues using the clean route. The function is built from `netlify/functions` using Netlify's Node 22 runtime and esbuild bundler. Successful responses contain WAV audio; failures return JSON with an `error` message.
 
-Run the focused tests with `npm test`.
+In Netlify environment settings, make the following variables available to **Functions**:
 
-## Deploy the Express API and Netlify frontend
+- `SARVAM_API_KEY` — private Sarvam credential.
+- `FIREBASE_PROJECT_ID` — must match the Firebase project used by the customer sign-in client.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` — public Supabase client settings used to query published Slokas under RLS.
 
-Netlify hosts the static frontend; it does not run `server.ts`. There is no existing backend deployment URL in this repository. `render.yaml` prepares the existing Express app for Render deployment without moving the TTS route or changing its Firebase authentication.
+Keep the existing `VITE_SUPABASE_*` and `VITE_FIREBASE_*` client variables available to the Netlify build as well; the TTS function needs the Supabase URL and anon key in its Functions runtime.
 
-1. Push the repository to GitHub and create a Render Blueprint from it. Render reads [render.yaml](./render.yaml), builds with `npm ci && npm run build`, starts with `npm start`, and provides its assigned `PORT`.
-2. Set the prompted Render secrets/configuration: `FIREBASE_PROJECT_ID`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `SARVAM_API_KEY`. `HARVED_ALLOWED_ORIGINS` is set to `https://harved.netlify.app` by the Blueprint. To persist audio across restarts, also configure all four `CLOUDFLARE_R2_*` variables from [.env.example](./.env.example); otherwise the existing bounded in-memory cache is used.
-3. After Render deploys, copy its assigned public service origin (scheme and hostname only, without a path or trailing slash). In Netlify site settings, add `VITE_API_BASE_URL` with that origin, then trigger a new frontend deploy. The Netlify build uses `npm run build:frontend` and publishes only `dist`; it does not publish or run the Express server bundle.
-4. For a different Netlify production domain, update `HARVED_ALLOWED_ORIGINS` on Render to the exact comma-separated origins that should be allowed, then redeploy. Local Express development defaults to localhost and 127.0.0.1 origins on ports 3000 and 5173.
+Do not configure `SUPABASE_SERVICE_ROLE_KEY` for this function. Do not expose `SARVAM_API_KEY` or Cloudflare credentials with a `VITE_` prefix. `HARVED_ALLOWED_ORIGINS` is optional; the default allowlist includes `https://harved.netlify.app` and local development origins. Add any custom production or preview origin explicitly if it needs cross-origin access.
 
-The API remains `POST /api/tts/translation-audio`; the frontend appends that path to `VITE_API_BASE_URL`. When the variable is unset locally, the request remains same-origin at the Express/Vite dev server. Send a Firebase ID token as `Authorization: Bearer <ID_TOKEN>` and a JSON body such as `{"slokaId":"<published-sloka-id>","language":"te"}`. A missing/invalid token returns 401; unsupported language returns 400; an unpublished or unknown sloka returns 404; a missing translation returns 422; Sarvam/backend generation failures return 502. Browser CORS errors indicate an origin mismatch or preflight rejection, while an upstream Sarvam failure occurs only after the authenticated API route has been reached.
+Audio caching works without R2 using bounded, per-function-instance memory. To persist cache objects across instances and deploys, optionally configure all four private `CLOUDFLARE_R2_ACCOUNT_ID`, `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, and `CLOUDFLARE_R2_BUCKET_NAME` variables for Functions. Partial R2 configuration is reported as a configuration error. Netlify responses are buffered, so the function caps WAV output at 4 MiB to stay below the platform response-size limit after base64 encoding. Warm instances coalesce concurrent requests and retain the existing 20-per-minute rate limit; cold starts and parallel instances do not share in-flight locks, caches, or rate-limit counts, so duplicate R2 writes and additional requests across instances remain possible.
 
-Never configure `SARVAM_API_KEY` in Netlify or under a `VITE_` name. Configure it only as a Render backend secret. The Netlify `VITE_API_BASE_URL` value is the backend's public origin, not a secret.
+Deploy the site from Netlify after setting Function environment variables. No separate Express service, Supabase Edge Function deployment, or database migration is needed. Local development continues to use the Express route via `npm run dev`. The separate Sanskrit Sloka Listen control remains direct playback from its public `audio_url` or `VITE_R2_PUBLIC_URL`; it does not call TTS.
+
+Run `npm test` for the TTS and application test suites.
+
+The function keeps the existing request contract: Firebase bearer token and JSON `{"slokaId":"<published-sloka-id>","language":"te"}`. Missing/invalid tokens return 401; invalid requests return 400; unknown/unpublished Slokas return 404; missing translations return 422; configuration failures return 503; Sarvam failures return 502.

@@ -8,25 +8,35 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:5173',
 ];
 
-export function createHarvedCorsMiddleware(configuredOrigins = process.env.HARVED_ALLOWED_ORIGINS) {
+export function getHarvedCorsHeaders(
+  origin: string | undefined,
+  configuredOrigins = process.env.HARVED_ALLOWED_ORIGINS,
+): Record<string, string> | null {
+  if (!origin) return {};
+
   const allowedOrigins = new Set(
     (configuredOrigins || DEFAULT_ALLOWED_ORIGINS.join(','))
       .split(',')
-      .map(origin => origin.trim())
+      .map(value => value.trim())
       .filter(Boolean),
   );
+  if (!allowedOrigins.has(origin)) return null;
 
+  return {
+    Vary: 'Origin',
+    'Access-Control-Allow-Origin': origin,
+  };
+}
+
+export function createHarvedCorsMiddleware(configuredOrigins = process.env.HARVED_ALLOWED_ORIGINS) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.header('origin');
-    if (origin) {
-      if (!allowedOrigins.has(origin)) {
-        res.status(403).json({ error: 'This origin is not allowed.' });
-        return;
-      }
-
-      res.vary('Origin');
-      res.setHeader('Access-Control-Allow-Origin', origin);
+    const corsHeaders = getHarvedCorsHeaders(origin, configuredOrigins);
+    if (!corsHeaders) {
+      res.status(403).json({ error: 'This origin is not allowed.' });
+      return;
     }
+    for (const [name, value] of Object.entries(corsHeaders)) res.setHeader(name, value);
 
     if (req.method === 'OPTIONS') {
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');

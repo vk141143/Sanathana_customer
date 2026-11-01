@@ -8,6 +8,7 @@ import {
   getSarvamLanguageCode,
   getTranslationText,
 } from '../src/lib/sarvamTts';
+import { resolveApiBaseUrl, resolveApiUrl } from '../src/lib/api';
 import {
   createSarvamTtsRouter,
   synthesizeSarvamAudio,
@@ -16,6 +17,29 @@ import {
 } from '../server/sarvamTtsRouter';
 
 const servers: Array<ReturnType<express.Express['listen']>> = [];
+
+test('resolves separately hosted API paths when configured', () => {
+  assert.equal(
+    resolveApiUrl(
+      '/api/chant/me',
+      'https://tts-api.example.com/',
+      true,
+    ),
+    'https://tts-api.example.com/api/chant/me',
+  );
+});
+
+test('keeps the same-origin API URL for local development without configuration', () => {
+  assert.equal(resolveApiUrl('/api/tts/translation-audio', undefined, false), '/api/tts/translation-audio');
+});
+
+test('fails safely when production API configuration is missing or invalid', () => {
+  assert.throws(() => resolveApiBaseUrl(undefined, true), /VITE_API_BASE_URL/);
+  assert.throws(
+    () => resolveApiBaseUrl('https://api.example.com/path', true),
+    /public HTTPS API origin/,
+  );
+});
 
 async function withCorsServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
   const app = express();
@@ -258,7 +282,7 @@ test('returns a safe client error when Sarvam fails', async () => {
     });
     assert.equal(response.status, 502);
     const body = await response.text();
-    assert.match(body, /temporarily unavailable/);
+    assert.match(body, /check Sarvam configuration and the API logs/);
     assert.doesNotMatch(body, /upstream-secret-details/);
   });
 });

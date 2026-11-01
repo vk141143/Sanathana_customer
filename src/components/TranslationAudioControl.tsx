@@ -1,6 +1,6 @@
 import { LoaderCircle, Pause, Play, RotateCcw, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { API_BASE_URL } from '../lib/api';
+import { TRANSLATION_AUDIO_ENDPOINT } from '../lib/api';
 import { auth } from '../lib/firebase';
 
 interface TranslationAudioControlProps {
@@ -74,7 +74,7 @@ export function TranslationAudioControl({
       const user = auth.currentUser;
       if (!user) throw new Error('Sign in to listen to translations.');
       const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/api/tts/translation-audio`, {
+      const response = await fetch(TRANSLATION_AUDIO_ENDPOINT, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -85,10 +85,17 @@ export function TranslationAudioControl({
       });
 
       if (!response.ok) {
-        const body: unknown = await response.json().catch(() => null);
+        const contentType = response.headers.get('content-type') ?? '';
+        const body: unknown = contentType.includes('application/json')
+          ? await response.json().catch(() => null)
+          : null;
         const message = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
           ? body.error
-          : 'Unable to generate audio. Please try again.';
+          : response.status === 404
+            ? 'The audio function was not found. Check the Netlify function deployment and route configuration.'
+            : response.status >= 500
+              ? 'The audio service is unavailable. Please retry; if this continues, check the function configuration and Sarvam service.'
+              : `The audio request failed (HTTP ${response.status}). Please try again.`;
         throw new Error(message);
       }
 
@@ -108,7 +115,11 @@ export function TranslationAudioControl({
       setState('playing');
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
-      setError(cause instanceof Error ? cause.message : 'Unable to generate audio. Please try again.');
+      setError(cause instanceof TypeError
+        ? 'Could not reach the audio service. Check the Netlify function deployment and CORS allowlist.'
+        : cause instanceof Error
+          ? cause.message
+          : 'Unable to generate audio. Please try again.');
       setState('error');
     } finally {
       busyRef.current = false;

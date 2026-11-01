@@ -76,7 +76,8 @@ export interface SlokaAudioState {
 type AudioFactory = () => HTMLAudioElement;
 
 const EMPTY_STATE: SlokaAudioState = { slokaId: null, status: 'idle', error: null };
-const PLAYBACK_ERROR = "Couldn't play this sloka right now. Please try again.";
+const PLAYBACK_ERROR = "Couldn't play this sloka. Check that its public audio URL is accessible and try again.";
+const AUDIO_LOAD_ERROR = "Couldn't load this sloka's audio. Check the public audio URL, network, and CORS settings.";
 const r2PublicBaseUrl = import.meta.env?.VITE_R2_PUBLIC_URL?.trim() ?? '';
 
 function releaseAudio(audio: HTMLAudioElement | null): void {
@@ -139,43 +140,62 @@ export class SlokaAudioPlayer {
     const operation = ++this.operation;
     this.setState({ slokaId, status: 'loading', error: null });
 
+    let resolvedUrl: string;
     try {
       const audioReference = getSlokaAudioReference(source);
       if (!audioReference) throw new Error('Sloka audio source is missing.');
-      const resolvedUrl = resolveSlokaAudioUrl(audioReference, this.publicBaseUrl);
-      const audio = this.createAudio();
-      this.audio = audio;
-      audio.preload = 'none';
-      audio.onplaying = () => {
-        if (this.operation === operation && this.audio === audio) {
-          this.setState({ slokaId, status: 'playing', error: null });
-        }
-      };
-      audio.onwaiting = () => {
-        if (this.operation === operation && this.audio === audio) {
-          this.setState({ slokaId, status: 'loading', error: null });
-        }
-      };
-      audio.onpause = () => {
-        if (this.operation === operation && this.audio === audio && !audio.ended) {
-          this.setState({ slokaId, status: 'paused', error: null });
-        }
-      };
-      audio.onended = () => {
-        if (this.operation !== operation || this.audio !== audio) return;
-        this.audio = null;
-        releaseAudio(audio);
-        this.setState({ slokaId, status: 'completed', error: null });
-      };
-      audio.onerror = () => this.fail(operation, slokaId, audio);
+      resolvedUrl = resolveSlokaAudioUrl(audioReference, this.publicBaseUrl);
+    } catch (cause) {
+      if (operation === this.operation) {
+        this.fail(
+          operation,
+          slokaId,
+          this.audio,
+          cause instanceof Error ? cause.message : PLAYBACK_ERROR,
+        );
+      }
+      return;
+    }
+
+    let audio: HTMLAudioElement;
+    try {
+      audio = this.createAudio();
+    } catch {
+      this.fail(operation, slokaId, null);
+      return;
+    }
+    this.audio = audio;
+    audio.preload = 'none';
+    audio.onplaying = () => {
+      if (this.operation === operation && this.audio === audio) {
+        this.setState({ slokaId, status: 'playing', error: null });
+      }
+    };
+    audio.onwaiting = () => {
+      if (this.operation === operation && this.audio === audio) {
+        this.setState({ slokaId, status: 'loading', error: null });
+      }
+    };
+    audio.onpause = () => {
+      if (this.operation === operation && this.audio === audio && !audio.ended) {
+        this.setState({ slokaId, status: 'paused', error: null });
+      }
+    };
+    audio.onended = () => {
+      if (this.operation !== operation || this.audio !== audio) return;
+      this.audio = null;
+      releaseAudio(audio);
+      this.setState({ slokaId, status: 'completed', error: null });
+    };
+    audio.onerror = () => this.fail(operation, slokaId, audio, AUDIO_LOAD_ERROR);
+    try {
       audio.src = resolvedUrl;
       await audio.play();
       if (operation === this.operation && this.audio === audio) {
         this.setState({ slokaId, status: 'playing', error: null });
       }
     } catch {
-      if (operation !== this.operation) return;
-      this.fail(operation, slokaId, this.audio);
+      if (operation === this.operation) this.fail(operation, slokaId, audio);
     }
   }
 
@@ -195,11 +215,16 @@ export class SlokaAudioPlayer {
     }
   }
 
-  private fail(operation: number, slokaId: string, audio: HTMLAudioElement | null): void {
+  private fail(
+    operation: number,
+    slokaId: string,
+    audio: HTMLAudioElement | null,
+    message = PLAYBACK_ERROR,
+  ): void {
     if (operation !== this.operation) return;
     if (this.audio === audio) this.audio = null;
     releaseAudio(audio);
-    this.setState({ slokaId, status: 'error', error: PLAYBACK_ERROR });
+    this.setState({ slokaId, status: 'error', error: message });
   }
 
   private setState(state: SlokaAudioState): void {
