@@ -1,4 +1,9 @@
 import { supabase } from './supabase';
+import { normalizeSlokaMetadata } from './slokaMetadata';
+import type { SlokaMetadata } from './slokaMetadata';
+
+export { normalizeSlokaMetadata } from './slokaMetadata';
+export type { SlokaMetadata } from './slokaMetadata';
 
 export const FALLBACK_SCRIPTURE_IMAGE =
   'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=600&q=80';
@@ -156,20 +161,11 @@ export async function fetchPublishedChapters(scriptureId: string): Promise<Publi
     .sort((a, b) => (a.chapter_number ?? 0) - (b.chapter_number ?? 0));
 }
 
-export interface SlokaMetadata {
-  id: string;
-  chapter_id: string;
-  verse_number: number;
-  verse_id: string;
-  json_url: string;
-  status?: string;
-}
-
 export async function fetchPublishedSlokas(chapterId: string): Promise<SlokaMetadata[]> {
   if (!chapterId) return [];
   const { data, error } = await supabase
     .from('slokas')
-    .select('id, chapter_id, verse_number, verse_id, json_url, status')
+    .select('id, chapter_id, verse_number, verse_id, json_url, status, audio_url, audio_r2_key, audio_r2_path, audio_status, audio_duration_seconds, audio_file_size_bytes, audio_updated_at')
     .eq('chapter_id', chapterId)
     .eq('status', 'Published')
     .order('verse_number', { ascending: true });
@@ -177,14 +173,7 @@ export async function fetchPublishedSlokas(chapterId: string): Promise<SlokaMeta
     console.error('Slokas fetch failed:', error.message);
     return [];
   }
-  return (data ?? []).map((row: any) => ({
-    id: normalizeString(row.id, ''),
-    chapter_id: normalizeString(row.chapter_id, ''),
-    verse_number: Number(row.verse_number ?? 0),
-    verse_id: normalizeString(row.verse_id ?? row.id, ''),
-    json_url: normalizeString(row.json_url ?? '', ''),
-    status: normalizeString(row.status, ''),
-  })).filter(s => s.id && s.json_url);
+  return (data ?? []).map(normalizeSlokaMetadata).filter(s => s.id && s.json_url);
 }
 
 export async function fetchSlokaJson(jsonUrl: string): Promise<any> {

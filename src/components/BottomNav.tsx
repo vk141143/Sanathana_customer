@@ -4,6 +4,7 @@ import { NavTab } from '../types';
 interface BottomNavProps {
   currentTab: NavTab;
   onTabChange: (tab: NavTab) => void;
+  homeRevealComplete?: boolean;
 }
 
 interface IconProps {
@@ -178,6 +179,7 @@ const NotchBar: React.FC<{ color: string }> = ({ color }) => {
 export const BottomNav: React.FC<BottomNavProps> = ({
   currentTab,
   onTabChange,
+  homeRevealComplete,
 }) => {
   if (currentTab === 'auth') return null;
 
@@ -186,6 +188,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto"
+      data-home-reveal={
+        currentTab !== 'home' ? 'inactive' : homeRevealComplete ? 'complete' : 'pending'
+      }
+      aria-hidden={currentTab === 'home' && !homeRevealComplete}
+      ref={element => {
+        if (element) element.inert = currentTab === 'home' && !homeRevealComplete;
+      }}
       style={{
         height: `calc(82px + env(safe-area-inset-bottom))`,
         left: '50%',

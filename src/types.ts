@@ -104,53 +104,95 @@ export interface UserProfile {
 export interface Festival {
   id: string;
   name: string;
-  alternate_name?: string;
-  festival_type: 'Major Festival' | 'Ekadashi' | 'Purnima' | 'Amavasya' | 'Jayanti' | 'Vrata' | 'Utsava' | 'Other';
-  short_description?: string;
-  description?: string;
-  festival_date?: string;
-  start_date?: string;
-  end_date?: string;
+  alternate_name: string | null;
+  slug: string;
+  festival_type: string;
+  short_description: string | null;
+  primary_deity: string | null;
+  associated_deities: unknown;
+  tradition: string | null;
   status: 'Draft' | 'Published' | 'Archived';
-  banner_url?: string;
-  story_url?: string;
-  puja_url?: string;
-  // Panchanga
-  tithi?: string;
-  paksha?: string;
-  tithi_start?: string;
-  tithi_end?: string;
-  nakshatra?: string;
-  yoga?: string;
-  karana?: string;
-  sunrise?: string;
-  sunset?: string;
-  moonrise?: string;
-  moonset?: string;
-  location?: string;
-  timezone?: string;
+  is_active: boolean;
+  cover_media_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface FestivalDetail extends Festival {}
+export interface FestivalOccurrence {
+  id: string;
+  festival_id: string;
+  year: number;
+  festival_date: string;
+  tithi_name: string | null;
+  paksha: string | null;
+  nakshatra_name: string | null;
+  yoga_name: string | null;
+  shubha_muhurta_start: string | null;
+  shubha_muhurta_end: string | null;
+  puja_time_start: string | null;
+  puja_time_end: string | null;
+  rahu_kalam_start: string | null;
+  rahu_kalam_end: string | null;
+  yamagandam_start: string | null;
+  yamagandam_end: string | null;
+  gulika_kalam_start: string | null;
+  gulika_kalam_end: string | null;
+  fasting_enabled: boolean;
+  fasting_type: string | null;
+  parana_required: boolean;
+  parana_time: string | null;
+  fasting_rules: string | null;
+  custom_timings: unknown;
+  status: 'draft' | 'review' | 'published' | 'archived';
+}
+
+export interface FestivalContent {
+  id: string;
+  festival_id: string;
+  occurrence_id: string | null;
+  festival_description: string | null;
+  spiritual_significance: string | null;
+  festival_story: unknown;
+  scriptural_references: unknown;
+  puja_name: string | null;
+  puja_duration_minutes: number | null;
+  puja_description: string | null;
+  puja_samagri: unknown;
+  puja_vidhi: unknown;
+  story_r2_key: string | null;
+  story_r2_url: string | null;
+  puja_r2_key: string | null;
+  puja_r2_url: string | null;
+  related_scriptures: unknown;
+  related_slokas: unknown;
+  related_mantras: unknown;
+  related_stotrams: unknown;
+  related_music: unknown;
+  related_stories: unknown;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface FestivalMedia {
   id: string;
   festival_id: string;
-  media_type: 'banner' | 'thumbnail' | 'illustration' | 'deity' | 'story' | 'puja' | 'gallery' | 'audio' | 'video' | 'notification';
+  occurrence_id: string | null;
+  media_type: 'image' | 'audio' | 'video' | 'banner' | 'gallery' | 'story_json' | 'puja_json' | 'notification' | string;
   storage_key: string;
   public_url: string;
-  file_name?: string;
+  file_name: string | null;
+  mime_type: string | null;
+  file_size: number | null;
   display_order: number;
-}
-
-export interface FestivalDeity {
-  id: string;
-  festival_id: string;
-  deity_name: string;
-  deity_image_url?: string;
-  deity_description?: string;
-  is_primary: boolean;
+  title: string | null;
+  description: string | null;
+  r2_key: string | null;
+  duration_seconds: number | null;
+  language_code: string | null;
+  alt_text: string | null;
+  caption: string | null;
   sort_order: number;
+  is_cover: boolean;
 }
 
 export interface FestivalSettings {
@@ -159,50 +201,21 @@ export interface FestivalSettings {
   show_on_home: boolean;
   is_featured: boolean;
   priority: number;
+  show_from: string | null;
+  show_until: string | null;
+  show_in_calendar: boolean;
 }
 
-export interface FestivalTiming {
-  id: string;
-  festival_id: string;
-  shubha_muhurta_start?: string;
-  shubha_muhurta_end?: string;
-  puja_start?: string;
-  puja_end?: string;
-  manchi_samayam_start?: string;
-  manchi_samayam_end?: string;
-  rahu_kalam_start?: string;
-  rahu_kalam_end?: string;
-  yamagandam_start?: string;
-  yamagandam_end?: string;
-  gulika_start?: string;
-  gulika_end?: string;
-  parana_time?: string;
-  brahma_muhurta_start?: string;
-  brahma_muhurta_end?: string;
-  abhijit_start?: string;
-  abhijit_end?: string;
-  sunrise?: string;
-  sunset?: string;
-  moonrise?: string;
-  moonset?: string;
+export interface FestivalListItem extends Festival {
+  occurrence: FestivalOccurrence | null;
+  settings: FestivalSettings | null;
+  coverMedia: FestivalMedia | null;
 }
 
-export interface StorySection {
-  title: string;
-  content: string;
-}
-
-export interface StoryJson {
-  title: string;
-  sections: StorySection[];
-}
-
-export interface PujaSection {
-  title: string;
-  content: string;
-}
-
-export interface PujaJson {
-  title: string;
-  sections: PujaSection[];
+export interface FestivalDetail extends Festival {
+  occurrence: FestivalOccurrence | null;
+  content: FestivalContent | null;
+  media: FestivalMedia[];
+  settings: FestivalSettings | null;
+  coverMedia: FestivalMedia | null;
 }

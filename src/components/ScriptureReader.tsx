@@ -12,6 +12,8 @@ import {
   FALLBACK_SCRIPTURE_IMAGE,
 } from '../lib/scriptureLibrary';
 import { TranslationAudioControl } from './TranslationAudioControl';
+import { SlokaAudioControl } from './SlokaAudioControl';
+import { hasSlokaAudio, slokaAudioPlayer } from '../lib/slokaAudio';
 import type { PracticeReading } from '../services/sadhana/practiceReading';
 
 interface ScriptureReaderProps {
@@ -64,6 +66,53 @@ const ContentBlock: React.FC<{ label: string; text: string; italic?: boolean }> 
   </div>
 );
 
+const SlokaSanskritPreview: React.FC<{ sloka: SlokaMetadata }> = ({ sloka }) => {
+  const [text, setText] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPreview = async () => {
+      const cacheKey = sloka.verse_id || sloka.id;
+      try {
+        const payload = verseJsonCache.get(cacheKey) ?? await fetchSlokaJson(sloka.json_url);
+        verseJsonCache.set(cacheKey, payload);
+        if (!cancelled) setText(payload?.sanskrit?.devanagari ?? '');
+      } catch {
+        if (!cancelled) setText('');
+      }
+    };
+
+    const node = containerRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      void loadPreview();
+      return () => { cancelled = true; };
+    }
+
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      observer.disconnect();
+      void loadPreview();
+    }, { rootMargin: '100px' });
+    observer.observe(node);
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [sloka.id, sloka.json_url, sloka.verse_id]);
+
+  return (
+    <div ref={containerRef}>
+      {text && (
+        <p className="font-sanskrit mt-3 text-[#d2c4b3]/80 text-sm leading-relaxed whitespace-pre-line">
+          {text}
+        </p>
+      )}
+    </div>
+  );
+};
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   bookmarks,
@@ -106,6 +155,8 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
 
   const langDropdownRef = useRef<HTMLDivElement>(null);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => slokaAudioPlayer.stop(), []);
 
   // Close lang dropdown on outside click
   useEffect(() => {
@@ -197,6 +248,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
 
   // ── Navigation handlers ───────────────────────────────────────────────────
   const handleSelectScripture = (s: PublishedScripture) => {
+    slokaAudioPlayer.stop();
     setSelectedScripture(s);
     setChapters([]);
     setScreen('chapters');
@@ -204,6 +256,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   };
 
   const handleSelectChapter = (c: PublishedChapter) => {
+    slokaAudioPlayer.stop();
     setSelectedChapter(c);
     setSlokas([]);
     setScreen('slokas');
@@ -211,6 +264,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   };
 
   const handleSelectSloka = (idx: number) => {
+    slokaAudioPlayer.stop();
     setSelectedSlokaIdx(idx);
     setVerseJson(null);
     setSelectedLanguage(preferredReadingLanguage);
@@ -218,6 +272,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   };
 
   const handleBackToScriptures = () => {
+    slokaAudioPlayer.stop();
     setScreen('scriptures');
     setSelectedScripture(null);
     setChapters([]);
@@ -225,12 +280,14 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
   };
 
   const handleBackToChapters = () => {
+    slokaAudioPlayer.stop();
     setScreen('chapters');
     setSelectedChapter(null);
     setSlokas([]);
   };
 
   const handleBackToSlokas = () => {
+    slokaAudioPlayer.stop();
     setScreen('slokas');
     setVerseJson(null);
   };
@@ -517,11 +574,16 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
             <div className="space-y-2">
               {slokas.map((sloka, idx) => {
                 const isBookmarkedSloka = bookmarks.includes(sloka.verse_id || sloka.id);
+                const audioSource = {
+                  audioUrl: sloka.audio_url,
+                  audioR2Path: sloka.audio_r2_path,
+                  audioR2Key: sloka.audio_r2_key,
+                };
                 return (
                   <div
                     key={sloka.id}
                     onClick={() => handleSelectSloka(idx)}
-                    className="flex items-center gap-4 p-4 bg-[#1c1b1b] border border-[#4e4539]/30 rounded-xl cursor-pointer hover:border-[#f2c377]/40 active:scale-[0.98] transition-all group"
+                    className="flex items-start gap-4 p-4 bg-[#1c1b1b] border border-[#4e4539]/30 rounded-xl cursor-pointer hover:border-[#f2c377]/40 active:scale-[0.98] transition-all group"
                   >
                     <div className="w-10 h-10 rounded-full bg-[#d4a85f]/10 border border-[#d4a85f]/30 flex items-center justify-center flex-shrink-0">
                       <span className="font-cinzel text-[#f2c377] text-xs font-bold">{sloka.verse_number}</span>
@@ -529,6 +591,12 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
                     <div className="flex-1 min-w-0">
                       <p className="font-cinzel text-[#e5e2e1] text-sm font-semibold">{sloka.verse_id}</p>
                       <p className="text-[#d2c4b3]/50 text-xs mt-0.5">Sloka {sloka.verse_number}</p>
+                      <SlokaSanskritPreview sloka={sloka} />
+                      {hasSlokaAudio(audioSource, sloka.audio_status) && (
+                        <div className="mt-2">
+                          <SlokaAudioControl slokaId={sloka.id} audioSource={audioSource} />
+                        </div>
+                      )}
                     </div>
                     {isBookmarkedSloka && (
                       <svg className="w-3.5 h-3.5 text-[#f2c377] flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
@@ -652,6 +720,24 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
               </p>
             )}
 
+            {currentSloka && hasSlokaAudio({
+              audioUrl: currentSloka.audio_url,
+              audioR2Path: currentSloka.audio_r2_path,
+              audioR2Key: currentSloka.audio_r2_key,
+            }, currentSloka.audio_status) && (
+              <div className="mb-4 flex justify-center">
+                <SlokaAudioControl
+                  key={currentSloka.id}
+                  slokaId={currentSloka.id}
+                  audioSource={{
+                    audioUrl: currentSloka.audio_url,
+                    audioR2Path: currentSloka.audio_r2_path,
+                    audioR2Key: currentSloka.audio_r2_key,
+                  }}
+                />
+              </div>
+            )}
+
             {/* Transliteration */}
             {transliteration && (
               <p className="text-[#d2c4b3]/70 text-sm italic text-center leading-relaxed whitespace-pre-line mb-5">
@@ -687,7 +773,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
       <div className="fixed bottom-20 left-0 right-0 z-40 max-w-lg mx-auto px-5">
         <div className="bg-[#1c1b1b]/90 backdrop-blur-xl border border-[#4e4539]/30 rounded-2xl px-4 py-2 flex items-center justify-between gap-3">
           <button
-            onClick={() => { if (selectedSlokaIdx > 0) { setSelectedSlokaIdx(i => i - 1); setVerseJson(null); } }}
+            onClick={() => { if (selectedSlokaIdx > 0) { slokaAudioPlayer.stop(); setSelectedSlokaIdx(i => i - 1); setVerseJson(null); } }}
             disabled={selectedSlokaIdx === 0}
             className="flex items-center gap-1.5 text-xs font-cinzel disabled:opacity-30 text-[#d2c4b3]/70 hover:text-[#f2c377] transition-colors"
           >
@@ -708,7 +794,7 @@ export const ScriptureReader: React.FC<ScriptureReaderProps> = ({
           </button>
 
           <button
-            onClick={() => { if (selectedSlokaIdx < slokas.length - 1) { setSelectedSlokaIdx(i => i + 1); setVerseJson(null); } }}
+            onClick={() => { if (selectedSlokaIdx < slokas.length - 1) { slokaAudioPlayer.stop(); setSelectedSlokaIdx(i => i + 1); setVerseJson(null); } }}
             disabled={selectedSlokaIdx === slokas.length - 1}
             className="flex items-center gap-1.5 text-xs font-cinzel disabled:opacity-30 text-[#d2c4b3]/70 hover:text-[#f2c377] transition-colors"
           >

@@ -1,7 +1,4 @@
-/**
- * Simple cache utility for festival data
- * TTL: 48-72 hours (172800-259200 seconds)
- */
+/** Local-storage cache utility; callers choose shorter TTLs for time-sensitive data. */
 
 interface CacheEntry<T> {
   data: T;

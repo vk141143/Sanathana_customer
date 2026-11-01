@@ -1,19 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import {
-  NavTab,
-  Festival,
-  FestivalMedia,
-  FestivalDeity,
-} from '../types';
-import { supabase } from '../lib/supabase';
+import { NavTab, FestivalListItem } from '../types';
 import { cache } from '../lib/cache';
+import { supabase } from '../lib/supabase';
+import {
+  fetchFestivalList,
+  festivalCache,
+  currentFestivalYear,
+  filterFestivalList,
+  isFestivalListCache,
+} from '../lib/festivalData';
 import { Header } from './Header';
 import { BottomNav } from './BottomNav';
-
-interface FestivalWithMedia extends Festival {
-  thumbnail?: FestivalMedia;
-  primary_deity?: FestivalDeity;
-}
 
 type FestivalType =
   | 'All'
@@ -47,7 +44,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
   onTabChange,
   onSelectFestival,
 }) => {
-  const [festivals, setFestivals] = useState<FestivalWithMedia[]>([]);
+  const [festivals, setFestivals] = useState<FestivalListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] =
@@ -58,99 +55,28 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
     fetchFestivals();
   }, []);
 
-  const fetchFestivals = async () => {
+  const fetchFestivals = async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
 
     try {
-      // ------------------------------------------------
-      // KEEP EXISTING CACHE LOGIC
-      // ------------------------------------------------
-      const cacheKey = 'festivals_list';
-
-      const cached =
-        cache.get<FestivalWithMedia[]>(cacheKey);
-
-      if (cached) {
+      const year = currentFestivalYear();
+      const cacheKey = festivalCache.listKey(year);
+      cache.remove('festivals_list');
+      if (forceRefresh) cache.remove(cacheKey);
+      const cached = cache.get<unknown>(cacheKey);
+      if (isFestivalListCache(cached)) {
         setFestivals(cached);
         setLoading(false);
         return;
       }
+      if (cached !== null) cache.remove(cacheKey);
 
-      // ------------------------------------------------
-      // KEEP EXISTING FESTIVAL DB QUERY
-      // ------------------------------------------------
-      const {
-        data: festivalData,
-        error: festivalError,
-      } = await supabase
-        .from('festivals')
-        .select(
-          'id, name, alternate_name, festival_type, short_description, festival_date, start_date, end_date, status'
-        )
-        .eq('status', 'Published')
-        .order('festival_date', {
-          ascending: true,
-        });
-
-      if (festivalError) throw festivalError;
-
-      if (!festivalData) {
-        setFestivals([]);
-        setLoading(false);
-        return;
-      }
-
-      // ------------------------------------------------
-      // KEEP EXISTING MEDIA + DEITY FETCHING
-      // ------------------------------------------------
-      const enrichedFestivals = await Promise.all(
-        festivalData.map(async festival => {
-          const { data: mediaData } = await supabase
-            .from('festival_media')
-            .select(
-              'id, festival_id, media_type, storage_key, public_url, file_name, display_order'
-            )
-            .eq('festival_id', festival.id)
-            .in('media_type', [
-              'thumbnail',
-              'banner',
-            ])
-            .order('display_order', {
-              ascending: true,
-            })
-            .limit(1)
-            .maybeSingle();
-
-          const { data: deityData } = await supabase
-            .from('festival_deities')
-            .select(
-              'id, festival_id, deity_name, deity_image_url, deity_description, is_primary, sort_order'
-            )
-            .eq('festival_id', festival.id)
-            .eq('is_primary', true)
-            .limit(1)
-            .maybeSingle();
-
-          return {
-            ...festival,
-            thumbnail: mediaData || undefined,
-            primary_deity:
-              deityData || undefined,
-          };
-        })
-      );
-
-      setFestivals(enrichedFestivals);
-      cache.set(
-        cacheKey,
-        enrichedFestivals
-      );
+      const rows = await fetchFestivalList(supabase, year);
+      setFestivals(rows);
+      cache.set(cacheKey, rows, festivalCache.listTtl);
     } catch (err) {
-      console.error(
-        'Error fetching festivals:',
-        err
-      );
+      console.error('Error fetching festivals:', err);
 
       setError(
         'Failed to load festivals. Please try again.'
@@ -163,29 +89,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
   // ------------------------------------------------
   // KEEP EXISTING FILTER LOGIC
   // ------------------------------------------------
-  const filteredFestivals =
-    festivals.filter(festival => {
-      const matchesSearch =
-        festival.name
-          .toLowerCase()
-          .includes(
-            searchQuery.toLowerCase()
-          ) ||
-        festival.alternate_name
-          ?.toLowerCase()
-          .includes(
-            searchQuery.toLowerCase()
-          );
-
-      const matchesType =
-        selectedType === 'All' ||
-        festival.festival_type ===
-          selectedType;
-
-      return (
-        matchesSearch && matchesType
-      );
-    });
+  const filteredFestivals = filterFestivalList(festivals, searchQuery, selectedType);
 
   // ------------------------------------------------
   // DATE FORMATTER
@@ -196,7 +100,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
     if (!dateStr) return '';
 
     try {
-      const date = new Date(dateStr);
+      const date = new Date(`${dateStr.slice(0, 10)}T12:00:00`);
 
       return date.toLocaleDateString(
         'en-IN',
@@ -214,36 +118,10 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
   // ------------------------------------------------
   // DISPLAY START → END DATE
   // ------------------------------------------------
-  const getFestivalDate = (
-    festival: FestivalWithMedia
-  ) => {
-    if (
-      festival.start_date &&
-      festival.end_date &&
-      festival.start_date !==
-        festival.end_date
-    ) {
-      return `${formatDate(
-        festival.start_date
-      )} – ${formatDate(
-        festival.end_date
-      )}`;
-    }
-
-    if (festival.festival_date) {
-      return formatDate(
-        festival.festival_date
-      );
-    }
-
-    if (festival.start_date) {
-      return formatDate(
-        festival.start_date
-      );
-    }
-
-    return '';
-  };
+  const getFestivalDate = (festival: FestivalListItem) =>
+    festival.occurrence?.festival_date
+      ? formatDate(festival.occurrence.festival_date)
+      : '';
 
   return (
     <>
@@ -566,7 +444,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
             {error}
 
             <button
-              onClick={fetchFestivals}
+              onClick={() => fetchFestivals(true)}
               className="ml-2 font-semibold text-[#F0B95D] underline"
             >
               Try Again
@@ -734,43 +612,10 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                           bg-[#1B140C]
                         "
                       >
-                        {festival.thumbnail
-                          ?.public_url ? (
+                        {festival.coverMedia?.public_url ? (
                           <img
-                            src={
-                              festival
-                                .thumbnail
-                                .public_url
-                            }
-                            alt={
-                              festival.name
-                            }
-                            loading="lazy"
-                            className="
-                              absolute
-                              inset-0
-                              h-full
-                              w-full
-                              object-cover
-                              transition-transform
-                              duration-700
-                              group-hover:scale-[1.06]
-                            "
-                          />
-                        ) : festival
-                            .primary_deity
-                            ?.deity_image_url ? (
-                          <img
-                            src={
-                              festival
-                                .primary_deity
-                                .deity_image_url
-                            }
-                            alt={
-                              festival
-                                .primary_deity
-                                .deity_name
-                            }
+                            src={festival.coverMedia.public_url}
+                            alt={festival.coverMedia.alt_text || festival.name}
                             loading="lazy"
                             className="
                               absolute
@@ -1028,33 +873,6 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                                 gap-1.5
                               "
                             >
-                              {festival
-                                .primary_deity
-                                .deity_image_url && (
-                                <img
-                                  src={
-                                    festival
-                                      .primary_deity
-                                      .deity_image_url
-                                  }
-                                  alt={
-                                    festival
-                                      .primary_deity
-                                      .deity_name
-                                  }
-                                  loading="lazy"
-                                  className="
-                                    h-5
-                                    w-5
-                                    flex-shrink-0
-                                    rounded-full
-                                    border
-                                    border-[#AF7735]/35
-                                    object-cover
-                                  "
-                                />
-                              )}
-
                               <span
                                 className="
                                   max-w-[80px]
@@ -1063,13 +881,27 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                                   text-[#B99E73]/50
                                 "
                               >
-                                {
-                                  festival
-                                    .primary_deity
-                                    .deity_name
-                                }
+                                {festival.primary_deity}
                               </span>
                             </div>
+                          )}
+
+                          {festival.settings?.is_featured && (
+                            <span
+                              className="
+                                rounded-full
+                                border
+                                border-[#D59849]/25
+                                bg-[#D59849]/10
+                                px-2
+                                py-[3px]
+                                text-[8px]
+                                tracking-[0.04em]
+                                text-[#E8C68B]/75
+                              "
+                            >
+                              Featured
+                            </span>
                           )}
 
                           <span

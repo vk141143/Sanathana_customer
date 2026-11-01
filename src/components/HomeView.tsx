@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { DevotionalAudioView } from './audio/DevotionalAudioView';
 import { InnerFlameGateway } from './InnerFlameGateway';
 import { ChantHomeSection } from './chant/ChantHomeSection';
+import { HomeHeroSequence, prefersReducedMotion } from './HomeHeroSequence';
 
 interface ContinueReadingInfo {
   scriptureName: string;
@@ -22,6 +23,7 @@ interface HomeViewProps {
   onOpenChantingModal: () => void;
   userEmail?: string;
   readingProgress?: { scripture_id: string; chapter_id: string; verse_number: number; language: string } | null;
+  onRevealComplete: () => void;
 }
 
 interface DailyQuote {
@@ -35,6 +37,74 @@ const getSeenIds = (): Set<string> => {
   try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); }
 };
 
+function HomeMandala() {
+  const rays = Array.from({ length: 24 }, (_, index) => index * 15);
+  const petals = Array.from({ length: 12 }, (_, index) => index * 30);
+
+  return (
+    <svg
+      className="home-sacred-mandala"
+      viewBox="0 0 360 360"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <mask id="home-mandala-face-clear">
+          <rect width="360" height="360" fill="white" />
+          <circle cx="180" cy="180" r="82" fill="black" />
+        </mask>
+      </defs>
+      <g
+        className="home-mandala-rotation"
+        fill="none"
+        stroke="#e6c27a"
+        strokeWidth="0.7"
+        mask="url(#home-mandala-face-clear)"
+      >
+        {[74, 92, 116, 144, 158].map((radius, index) => (
+          <circle
+            key={radius}
+            className="home-mandala-stroke"
+            cx="180"
+            cy="180"
+            r={radius}
+            pathLength="1"
+            style={{ animationDelay: `${0.12 + index * 0.1}s` }}
+          />
+        ))}
+        {rays.map((rotation, index) => (
+          <line
+            key={rotation}
+            className="home-mandala-stroke"
+            x1="180"
+            y1="126"
+            x2="180"
+            y2={index % 2 === 0 ? 164 : 154}
+            pathLength="1"
+            transform={`rotate(${rotation} 180 180)`}
+            style={{ animationDelay: `${0.42 + (index % 6) * 0.04}s` }}
+          />
+        ))}
+        {petals.map(rotation => (
+          <path
+            key={rotation}
+            className="home-mandala-stroke"
+            d="M180 94 C155 111 157 139 180 153 C203 139 205 111 180 94Z"
+            pathLength="1"
+            transform={`rotate(${rotation} 180 180)`}
+            style={{ animationDelay: `${0.5 + (rotation % 90) * 0.001}s` }}
+          />
+        ))}
+        <path
+          className="home-mandala-stroke"
+          d="M180 160 C169 169 169 191 180 200 C191 191 191 169 180 160Z"
+          pathLength="1"
+        />
+      </g>
+    </svg>
+  );
+}
+
 // ── Main HomeView ─────────────────────────────────────────────────────────────
 export const HomeView: React.FC<HomeViewProps> = ({
   user,
@@ -44,8 +114,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenChantingModal,
   userEmail,
   readingProgress,
+  onRevealComplete,
 }) => {
   const [showAudio, setShowAudio] = useState(false);
+  const [homeRevealed, setHomeRevealed] = useState(prefersReducedMotion);
   const [dailyQuote, setDailyQuote] = useState<DailyQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -54,6 +126,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [heroBannerImage, setHeroBannerImage] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(null);
   const currentQuoteTitle = useRef<string | null>(null);
+  const revealCompletedRef = useRef(homeRevealed);
+
+  const completeHomeReveal = useCallback(() => {
+    if (revealCompletedRef.current) return;
+    revealCompletedRef.current = true;
+    setHomeRevealed(true);
+    onRevealComplete();
+  }, [onRevealComplete]);
 
   const fetchQuote = useCallback(async () => {
     const today = new Date().toISOString().split('T')[0];
@@ -108,7 +188,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
       .eq('is_active', true)
       .limit(1)
       .maybeSingle()
-      .then(({ data }) => { if (data?.image_url) setHeroBannerImage(data.image_url); });
+      .then(({ data }) => {
+        if (data?.image_url) setHeroBannerImage(data.image_url);
+        else completeHomeReveal();
+      });
 
     fetchQuote();
     (async () => {
@@ -123,7 +206,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     const handleVisibility = () => { if (document.visibilityState === 'visible') fetchQuote(); };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [fetchQuote, fetchUnreadCount, userEmail]);
+  }, [completeHomeReveal, fetchQuote, fetchUnreadCount, userEmail]);
 
   useEffect(() => {
     const channel = supabase
@@ -175,7 +258,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#080604] text-[#e5e7eb] font-garamond pb-28 max-w-md mx-auto relative select-none overflow-x-hidden">
+    <div
+      className="home-view min-h-screen bg-[#080604] text-[#e5e7eb] font-garamond pb-28 max-w-md mx-auto relative select-none overflow-x-hidden"
+      data-home-reveal={homeRevealed ? 'complete' : 'pending'}
+    >
       {showAudio && <DevotionalAudioView onBack={() => setShowAudio(false)} />}
 
       {/* ── KRISHNA HERO ─────────────────────────────────────────────────── */}
@@ -186,16 +272,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
         {/* Hero banner from Supabase */}
         <div className="absolute inset-0">
           {heroBannerImage ? (
-            <img
-              src={heroBannerImage}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover object-center"
-              loading="eager"
+            <HomeHeroSequence
+              finalImageUrl={heroBannerImage}
+              onComplete={completeHomeReveal}
             />
           ) : (
             <div className="absolute inset-0" style={{ background: 'linear-gradient(160deg, #1a0e06 0%, #080604 100%)' }} />
           )}
         </div>
+        <div className="home-divine-glow" aria-hidden="true" />
+        <HomeMandala />
 
         {/* Cinematic vignette edges */}
         <div className="absolute inset-0 pointer-events-none" style={{
@@ -215,11 +301,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
           style={{ background: 'linear-gradient(to bottom, rgba(4,3,2,0.75), transparent)' }} />
 
         {/* ── TOP HEADER ─────────────────────────────────────────────────── */}
-        <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-5 pt-5 pb-3">
+        <header
+          className="home-reveal-hidden home-reveal-header absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-5 pt-5 pb-3"
+          aria-hidden={!homeRevealed}
+          ref={element => {
+            if (element) element.inert = !homeRevealed;
+          }}
+        >
           {/* Om symbol */}
           <button
             onClick={() => onTabChange('profile')}
-            className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform"
+            className="home-reveal-logo flex flex-col items-center gap-0.5 active:scale-90 transition-transform"
           >
             <img
               src="/logo.png"
@@ -238,7 +330,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           {/* Center title */}
           <div className="flex flex-col items-center">
             <span
-              className="font-cinzel font-bold tracking-[0.22em]"
+              className="home-reveal-title font-cinzel font-bold tracking-[0.22em]"
               style={{
                 fontSize: 15,
                 background: 'linear-gradient(135deg, #f2c377 0%, #d4a85f 60%, #b98d28 100%)',
@@ -247,9 +339,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 filter: 'drop-shadow(0 1px 6px rgba(212,168,95,0.4))',
               }}
             >
-              SANATANA
+              {'SANATANA'.split('').map((letter, index) => (
+                <span
+                  key={`${letter}-${index}`}
+                  className="home-title-letter"
+                  style={{ animationDelay: `${index * 65}ms` }}
+                >
+                  {letter}
+                </span>
+              ))}
             </span>
-            <span className="text-[#a6834d]/70 tracking-widest" style={{ fontSize: 8, letterSpacing: '0.18em' }}>
+            <span
+              className="home-reveal-subtitle text-[#a6834d]/70 tracking-widest"
+              style={{ fontSize: 8, letterSpacing: '0.18em' }}
+            >
               YOUR JOURNEY WITHIN
             </span>
           </div>
@@ -279,7 +382,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               })();
               onTabChange('notifications');
             }}
-            className="relative p-1 active:scale-90 transition-transform"
+            className="home-reveal-bell relative p-1 active:scale-90 transition-transform"
             style={{ color: '#d4a85f' }}
           >
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -295,14 +398,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </button>
         </header>
 
-        <InnerFlameGateway onAction={handleLotusAction} />
+        <InnerFlameGateway onAction={handleLotusAction} revealPending={!homeRevealed} />
         <ChantHomeSection onOpen={onOpenChantingModal} />
       </section>
 
       {/* ── TODAY'S VERSE ─────────────────────────────────────────────────── */}
       <section className="px-5 mt-2">
         <div
-          className="relative overflow-hidden rounded-2xl"
+          className="home-reveal-hidden home-verse-reveal relative overflow-hidden rounded-2xl"
+          aria-hidden={!homeRevealed}
+          ref={element => {
+            if (element) element.inert = !homeRevealed;
+          }}
           style={{
             background: 'linear-gradient(135deg, rgba(26,18,10,0.95) 0%, rgba(14,10,6,0.98) 100%)',
             border: '1px solid rgba(212,168,95,0.12)',
@@ -310,17 +417,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
           }}
         >
           {/* Gold left accent */}
-          <div className="absolute left-0 top-4 bottom-4 w-[2px] rounded-full"
+          <div className="home-verse-accent absolute left-0 top-4 bottom-4 w-[2px] rounded-full"
             style={{ background: 'linear-gradient(to bottom, transparent, #d4a85f, transparent)' }} />
 
           <div className="px-6 py-5">
             <div className="flex items-center justify-between mb-4">
-              <span className="font-cinzel text-[#a6834d] tracking-widest" style={{ fontSize: 9, letterSpacing: '0.2em' }}>
+              <span className="home-verse-label font-cinzel text-[#a6834d] tracking-widest" style={{ fontSize: 9, letterSpacing: '0.2em' }}>
                 TODAY'S VERSE
               </span>
               <button
                 onClick={() => setShowExplanationModal(true)}
-                className="active:scale-90 transition-transform"
+                className="home-verse-bookmark active:scale-90 transition-transform"
                 style={{ color: 'rgba(212,168,95,0.5)' }}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
@@ -329,49 +436,57 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </button>
             </div>
 
-            {quoteLoading ? (
-              <div className="space-y-3 animate-pulse">
-                <div className="h-7 w-full rounded bg-[#d4a85f]/10" />
-                <div className="h-7 w-4/5 mx-auto rounded bg-[#d4a85f]/10" />
-                <div className="h-3 w-1/3 rounded bg-white/5 mt-4" />
-              </div>
-            ) : (
-              <>
-                <p
-                  className="text-center text-white/90 leading-loose mb-1 whitespace-pre-line"
-                  style={{
-                    fontFamily: "'Noto Serif Devanagari', serif",
-                    fontSize: 20,
-                    textShadow: '0 0 20px rgba(212,168,95,0.15)',
-                  }}
-                >
-                  {dailyQuote?.sanskrit ?? ''}
-                </p>
-                <div className="flex items-center justify-center gap-3 mt-4 mb-1">
-                  <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, transparent, rgba(212,168,95,0.3))' }} />
-                  <span className="text-[#a6834d]/70 font-cinzel" style={{ fontSize: 9, letterSpacing: '0.12em' }}>
-                    {dailyQuote?.source || ''}
-                  </span>
-                  <div className="h-px flex-1" style={{ background: 'linear-gradient(to left, transparent, rgba(212,168,95,0.3))' }} />
+            <div className="home-verse-content">
+              {quoteLoading ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="h-7 w-full rounded bg-[#d4a85f]/10" />
+                  <div className="h-7 w-4/5 mx-auto rounded bg-[#d4a85f]/10" />
+                  <div className="h-3 w-1/3 rounded bg-white/5 mt-4" />
                 </div>
-                <button
-                  onClick={() => setShowExplanationModal(true)}
-                  className="w-full flex items-center justify-center gap-2 mt-4 group"
-                  style={{ color: 'rgba(212,168,95,0.7)', fontSize: 10, letterSpacing: '0.16em' }}
-                >
-                  <span className="font-cinzel group-hover:text-[#d4a85f] transition-colors">READ THE WISDOM</span>
-                  <svg className="w-3 h-3 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </button>
-              </>
-            )}
+              ) : (
+                <>
+                  <p
+                    className="text-center text-white/90 leading-loose mb-1 whitespace-pre-line"
+                    style={{
+                      fontFamily: "'Noto Serif Devanagari', serif",
+                      fontSize: 20,
+                      textShadow: '0 0 20px rgba(212,168,95,0.15)',
+                    }}
+                  >
+                    {dailyQuote?.sanskrit ?? ''}
+                  </p>
+                  <div className="flex items-center justify-center gap-3 mt-4 mb-1">
+                    <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, transparent, rgba(212,168,95,0.3))' }} />
+                    <span className="text-[#a6834d]/70 font-cinzel" style={{ fontSize: 9, letterSpacing: '0.12em' }}>
+                      {dailyQuote?.source || ''}
+                    </span>
+                    <div className="h-px flex-1" style={{ background: 'linear-gradient(to left, transparent, rgba(212,168,95,0.3))' }} />
+                  </div>
+                  <button
+                    onClick={() => setShowExplanationModal(true)}
+                    className="w-full flex items-center justify-center gap-2 mt-4 group"
+                    style={{ color: 'rgba(212,168,95,0.7)', fontSize: 10, letterSpacing: '0.16em' }}
+                  >
+                    <span className="font-cinzel group-hover:text-[#d4a85f] transition-colors">READ THE WISDOM</span>
+                    <svg className="w-3 h-3 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                      <path d="M14 5l7 7m0 0l-7 7m7-7H3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </section>
 
       {/* ── SADHANA PROGRESS ──────────────────────────────────────────────── */}
-      <section className="px-5 mt-5">
+      <section
+        className="home-reveal-hidden home-sadhana-reveal px-5 mt-5"
+        aria-hidden={!homeRevealed}
+        ref={element => {
+          if (element) element.inert = !homeRevealed;
+        }}
+      >
         <div
           className="rounded-2xl overflow-hidden"
           style={{
@@ -450,7 +565,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       {/* ── CONTINUE READING ──────────────────────────────────────────────── */}
       {continueReading && (
-        <section className="px-5 mt-5">
+        <section
+          className="home-reveal-hidden home-content-reveal home-continue-reading px-5 mt-5"
+          aria-hidden={!homeRevealed}
+          ref={element => {
+            if (element) element.inert = !homeRevealed;
+          }}
+        >
           <div className="flex items-center justify-between mb-3">
             <span className="font-cinzel text-white/40 tracking-widest" style={{ fontSize: 9, letterSpacing: '0.2em' }}>
               CONTINUE READING
@@ -507,7 +628,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
       )}
 
       {/* ── DISCOVER ──────────────────────────────────────────────────────── */}
-      <section className="mt-8 pb-4">
+      <section
+        className="home-reveal-hidden home-content-reveal home-discover mt-8 pb-4"
+        aria-hidden={!homeRevealed}
+        ref={element => {
+          if (element) element.inert = !homeRevealed;
+        }}
+      >
         <div className="px-5 mb-4">
           <span className="font-cinzel text-white/40 tracking-widest" style={{ fontSize: 9, letterSpacing: '0.2em' }}>
             DISCOVER
@@ -569,7 +696,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
       </section>
 
       {/* ── DAILY STREAK ──────────────────────────────────────────────────── */}
-      <section className="px-5 mt-4 mb-4">
+      <section
+        className="home-reveal-hidden home-content-reveal home-daily-streak px-5 mt-4 mb-4"
+        aria-hidden={!homeRevealed}
+        ref={element => {
+          if (element) element.inert = !homeRevealed;
+        }}
+      >
         <div
           onClick={() => onTabChange('sadhana')}
           className="flex items-center justify-between rounded-xl px-4 py-3 cursor-pointer active:scale-[0.99] transition-transform"

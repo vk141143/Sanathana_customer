@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { ChantApiError, createChantRouter } from '../server/chantRouter';
 import { createChantCatalogue, configuredChantTargets, preferredChantLanguage } from '../src/lib/chantCatalog';
 import { ChantRequestError, createChantTransport } from '../src/lib/chantTransport';
+import { createPracticeChantCatalogue } from '../src/lib/practiceChantCatalog';
 
 // A stateful query double: unlike a canned response, every owner/status filter
 // changes the returned rows. SQL concurrency/RLS itself is tested with PGlite.
@@ -184,6 +185,33 @@ test('catalogue queries use published Chant definitions and their real child rel
   assert.equal(await catalogue.getPublishedChant(db.chant),null);
   await assert.rejects(catalogue.chantDetails(db.chant),/no longer available/);
   assert.ok(db.queries.every(query=>['chants','chant_categories','chant_translations','chant_media'].includes(query.table)));
+});
+
+test('Japa catalogue fetches only active, unarchived japa and mantra practices from sadhana_practices',async()=>{
+  const rows=[
+    {id:randomUUID(),name:'Active Japa',slug:'active-japa',category:'japa',is_active:true,archived_at:null},
+    {id:randomUUID(),name:'Active mantra',slug:'active-mantra',category:'mantra',is_active:true,archived_at:null},
+    {id:randomUUID(),name:'Other practice',slug:'other-practice',category:'meditation',is_active:true,archived_at:null},
+    {id:randomUUID(),name:'Inactive Japa',slug:'inactive-japa',category:'japa',is_active:false,archived_at:null},
+    {id:randomUUID(),name:'Archived mantra',slug:'archived-mantra',category:'mantra',is_active:false,archived_at:'2026-01-01'},
+  ];
+  const calls:Array<[string,...unknown[]]>=[],query:any={
+    select(columns:string){calls.push(['select',columns]);return query;},
+    eq(column:string,value:unknown){calls.push(['eq',column,value]);return query;},
+    is(column:string,value:unknown){calls.push(['is',column,value]);return query;},
+    in(column:string,values:unknown[]){calls.push(['in',column,values]);return query;},
+    order(column:string,options:unknown){calls.push(['order',column,options]);return query;},
+    range:async()=>({data:rows.filter(row=>row.is_active&&row.archived_at===null&&['japa','mantra'].includes(row.category)),error:null}),
+  };
+  const catalogue=createPracticeChantCatalogue({from:(table:string)=>{calls.push(['from',table]);return query;}} as any);
+  const practices=await catalogue.list();
+  assert.deepEqual(practices.map(practice=>practice.name),['Active Japa','Active mantra']);
+  assert.deepEqual(calls.find(call=>call[0]==='from'),['from','sadhana_practices']);
+  assert.ok(calls.some(call=>call[0]==='eq'&&call[1]==='is_active'&&call[2]===true));
+  assert.ok(calls.some(call=>call[0]==='is'&&call[1]==='archived_at'&&call[2]===null));
+  assert.ok(calls.some(call=>call[0]==='in'&&call[1]==='category'&&JSON.stringify(call[2])===JSON.stringify(['mantra','japa'])));
+  const columns=calls.find(call=>call[0]==='select')?.[1] as string;
+  for(const column of ['id','name','slug','subtitle','description','category','instructions','category_config','cover_image_url','display_order','is_active','archived_at'])assert.ok(columns.split(',').includes(column));
 });
 
 test('public catalogue failures are errors, never fabricated or empty successful results',async()=>{

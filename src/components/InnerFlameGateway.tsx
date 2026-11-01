@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState, useId } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState, useId } from 'react';
 import { gsap } from 'gsap';
 import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
 import './InnerFlameGateway.css';
@@ -23,7 +23,13 @@ const PATHS = [
   { id: 'sadhana', label: 'SADHANA', name: 'Sadhana', sub: 'Continue practice', x: 0, y: 108 },
 ];
 
-export function InnerFlameGateway({ onAction }: { onAction: (id: string) => void }) {
+export function InnerFlameGateway({
+  onAction,
+  revealPending = false,
+}: {
+  onAction: (id: string) => void;
+  revealPending?: boolean;
+}) {
   const root = useRef<HTMLDivElement>(null);
   const center = useRef<HTMLButtonElement>(null);
   const master = useRef<gsap.core.Timeline | null>(null);
@@ -34,6 +40,10 @@ export function InnerFlameGateway({ onAction }: { onAction: (id: string) => void
   const [ready, setReady] = useState(false);
   const menuId = useId();
   const artId = useId().replace(/:/g, "");
+  const setRoot = useCallback((element: HTMLDivElement | null) => {
+    root.current = element;
+    if (element) element.inert = revealPending;
+  }, [revealPending]);
 
   useLayoutEffect(() => {
     const media = gsap.matchMedia();
@@ -144,9 +154,14 @@ export function InnerFlameGateway({ onAction }: { onAction: (id: string) => void
   };
 
   return (
-    <div ref={root} className="inner-flame-gateway" onKeyDown={event => {
-      if (event.key === 'Escape' && open) { event.stopPropagation(); toggle(false); }
-    }}>
+    <div
+      ref={setRoot}
+      className="inner-flame-gateway home-reveal-hidden home-reveal-sadhana"
+      aria-hidden={revealPending}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && open) { event.stopPropagation(); toggle(false); }
+      }}
+    >
       <div className="inner-flame-backdrop-layer" aria-hidden="true" />
       {open && <div className="inner-flame-dismiss" onClick={() => toggle(false)} />}
       <div className="inner-flame-stage">

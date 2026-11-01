@@ -10,9 +10,19 @@ import { ChantAudio } from '../src/components/chant/ChantAudio';
 import { ChantCounter } from '../src/components/chant/ChantCounter';
 import { ChantExperienceContent, type ChantExperienceServices } from '../src/components/chant/ChantExperienceContent';
 import { createChantTransport } from '../src/lib/chantTransport';
-import type { Chant, ChantMe, ChantMedia, ChantSession, ChantTranslation } from '../src/lib/chant';
+import type { Chant, ChantMe, ChantMedia } from '../src/lib/chant';
+import { normalizeChantPractice, type ChantPractice } from '../src/lib/practiceChantCatalog';
 
 const empty:ChantMe={sessions:[],favourites:[],stats:[],resumable:[],totals:{sessions:0,repetitions:0},adminRole:null};
+const makePractice=(overrides:Record<string,unknown>={})=>normalizeChantPractice({
+  id:'11111111-1111-4111-8111-111111111111',name:'Morning Japa',slug:'morning-japa',category:'japa',
+  is_active:true,archived_at:null,subtitle:'A gentle daily practice',description:'Begin the day with a sacred mantra.',
+  practice_mode:'repetition',target_type:'repetitions',target_count:27,cover_image_url:'https://media.example/japa.png',
+  instructions:'Sit comfortably and repeat with attention.',
+  category_config:{counter_enabled:true,count_preset:27,mantra_name:'Om Namah Shivaya',mantra_text:'ॐ नमः शिवाय',
+    transliteration:'Om Namah Shivaya',meaning:'I bow to Shiva.',localized_content:{te:{meaning:'శివునికి నమస్కరిస్తున్నాను.'}}},
+  ...overrides,
+}) as ChantPractice;
 
 test('mounted Chant components handle Strict Mode, account changes, retries and media events',async t=>{
   const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost'});
@@ -24,63 +34,36 @@ test('mounted Chant components handle Strict Mode, account changes, retries and 
     return {container,render:async(next:React.ReactNode)=>{await act(async()=>root.render(next));},close:async()=>{await act(async()=>root.unmount());container.remove();}};
   }
   try {
-    await t.test('actual discovery view selects details, changes published language and starts the selected Japa counter',async()=>{
-      const first={id:'11111111-1111-4111-8111-111111111111',title:'First published mantra',original_text:'First original',category_id:'cat',mantra_type:'mantra',default_repetition_target:27,available_targets:[27,54]} as Chant;
-      const second={...first,id:'22222222-2222-4222-8222-222222222222',title:'Selected stotram',original_text:'द्वितीय मन्त्र\nमूल पाठ',mantra_type:'stotram',featured:true,cover_image_url:'https://media.example/cover.png'} as Chant;
-      const translations=[{language_code:'te',meaning:'తెలుగు అర్థం',explanation:'తెలుగు వివరణ'},
-        {language_code:'en',meaning:'English meaning',life_context:'Daily application'}] as ChantTranslation[];
-      const calls:Array<{path:string;body:any}>=[],detailIds:string[]=[];
-      let saved:ChantSession;
+    await t.test('Home Japa displays Admin practices, opens detail and counts without using Chant session IDs',async()=>{
+      const practice=makePractice({guided_audio_url:'https://media.example/japa.mp3'});
+      const mantra=makePractice({id:'22222222-2222-4222-8222-222222222222',name:'Published mantra',slug:'published-mantra',category:'mantra',
+        category_config:{mantra_text:'ॐ शान्तिः',counter_enabled:false}});
+      const calls:Array<{path:string;body:any}>=[],completed:number[]=[];
       const services:ChantExperienceServices={
         currentUid:()=> 'owner',subscribeAuth:listener=>{listener('owner');return()=>{};},renderAdmin:()=>null,
-        library:async(_search,_category,_page,type)=>({chants:[first,second].filter(c=>!type||c.mantra_type===type),categories:[{id:'cat',name:'Published category',slug:'published',description:null,cover_image_url:null}],previews:{[second.id]:translations[0]}}),
-        getPublishedChant:async id=>id===second.id?second:first,
-        details:async id=>{detailIds.push(id);return {chant:id===second.id?second:first,translations,media:translations.map(t=>({id:t.language_code,title:t.language_code,language_code:t.language_code,media_type:'audio',is_default:true,public_url:`https://media.example/${t.language_code}.mp3`}))};},
-        api:async<T,>(path:string,body?:unknown)=>{
-          calls.push({path,body});
-          if(path==='/sessions')saved={id:'session',chant_id:(body as any).chant_id,user_id:'owner',target_count:(body as any).target_count,language_code:(body as any).language_code,current_count:0,version:0,status:'active',duration_seconds:0,completed_malas:0,started_at:new Date().toISOString(),completed_at:null,reflection:null};
-          else if(path.endsWith('/action'))saved={...saved,current_count:saved.current_count+1,version:saved.version+1};
-          else throw new Error('Private history unavailable');
-          return saved as T;
-        },
+        getPublishedChant:async()=>null,details:async()=>{throw new Error('Legacy Chant details must not load from Japa.');},
+        api:async<T,>(path:string,body?:unknown)=>{calls.push({path,body});throw new Error('Admin practice IDs must not call Chant APIs.');},
+        practices:{list:async()=>[practice,mantra]},
       };
-      const view=await mount(<StrictMode><ChantExperienceContent services={services} preferredLanguage="te" onClose={()=>{}} onComplete={()=>{}}/></StrictMode>);
-      const button=(label:string)=>Array.from(view.container.querySelectorAll('button')).find(b=>b.textContent===label)!;
+      const view=await mount(<StrictMode><ChantExperienceContent services={services} preferredLanguage="te" onClose={()=>{}} onComplete={count=>completed.push(count)}/></StrictMode>);
       try {
-        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,250));});
-        assert.equal(calls.length,0);assert.equal(view.container.querySelectorAll('.chant-card').length,2);
-        assert.match(view.container.querySelectorAll('.chant-card')[1].textContent!,/తెలుగు అర్థం/);
-        const artwork=view.container.querySelector('img')!;
-        await act(async()=>artwork.dispatchEvent(new dom.window.Event('error')));
-        assert.equal(view.container.querySelectorAll('img').length,0);
-        const type=view.container.querySelectorAll('select')[0];
-        await act(async()=>{type.value='stotram';type.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
-        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,250));});
-        assert.equal(view.container.querySelectorAll('.chant-card').length,1);
+        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
+        assert.equal(view.container.querySelectorAll('.chant-card').length,2);
+        assert.match(view.container.textContent!,/Japa practices/);
+        assert.doesNotMatch(view.container.textContent!,/Mantra Library|Stotrams|Search mantras|Practice type/);
+        assert.match(view.container.querySelectorAll('.chant-card')[0].textContent!,/27 repetitions/);
         await act(async()=>view.container.querySelector<HTMLButtonElement>('.chant-card')!.click());
-        assert.deepEqual(detailIds,[second.id]);assert.match(view.container.textContent!,/द्वितीय मन्त्र/);
-        assert.match(view.container.textContent!,/తెలుగు వివరణ/);assert.doesNotMatch(view.container.textContent!,/English meaning/);
-        const language=view.container.querySelector('select')!;
-        assert.equal(language.value,'te');assert.equal(language.querySelector<HTMLOptionElement>('option[value=ml]')!.disabled,true);
-        await act(async()=>{language.value='en';language.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
-        assert.match(view.container.textContent!,/English meaning/);assert.doesNotMatch(view.container.textContent!,/తెలుగు అర్థం/);
-        assert.match(view.container.querySelector('audio')!.src,/en\.mp3$/);
-        // Going back keeps the type filter and selection context.
-        await act(async()=>view.container.querySelector<HTMLButtonElement>('[aria-label="Go back"]')!.click());
-        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,250));});
-        assert.equal(view.container.querySelector('select')!.value,'stotram');
-        await act(async()=>view.container.querySelector<HTMLButtonElement>('.chant-card')!.click());
-        const detailLanguage=view.container.querySelector('select')!;
-        await act(async()=>{detailLanguage.value='en';detailLanguage.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
-        await act(async()=>button('54').click());
-        await act(async()=>button('Begin chanting').click());
-        assert.equal(calls.length,1);assert.equal(calls[0].path,'/sessions');
-        assert.equal(calls[0].body.chant_id,second.id);assert.equal(calls[0].body.language_code,'en');assert.equal(calls[0].body.target_count,54);
-        assert.match(view.container.querySelector('.chant-practice')!.textContent!,/English meaning/);
-        assert.match(view.container.querySelector('.chant-counter')!.textContent!,/OF 54/);
+        assert.match(view.container.textContent!,/ॐ नमः शिवाय/);
+        assert.match(view.container.textContent!,/Om Namah Shivaya/);
+        assert.match(view.container.textContent!,/శివునికి నమస్కరిస్తున్నాను/);
+        assert.match(view.container.textContent!,/Sit comfortably and repeat with attention/);
+        assert.equal(view.container.querySelector('audio')?.getAttribute('preload'),'none');
+        const button=(label:string)=>Array.from(view.container.querySelectorAll('button')).find(b=>b.textContent===label)!;
+        await act(async()=>button('Begin Japa practice').click());
         await act(async()=>view.container.querySelector<HTMLButtonElement>('.chant-counter')!.click());
-        assert.equal(calls[1].path,'/sessions/session/action');assert.equal(calls[1].body.action,'tap');assert.equal(calls[1].body.version,0);
         assert.match(view.container.querySelector('.chant-counter')!.getAttribute('aria-label')!,/count 1/);
+        await act(async()=>button('Finish practice').click());
+        assert.deepEqual(completed,[1]);assert.equal(calls.length,0);
       } finally {await view.close();}
     });
     await t.test('actual catalogue distinguishes empty, failed and private-history failure states',async()=>{
@@ -88,24 +71,22 @@ test('mounted Chant components handle Strict Mode, account changes, retries and 
       let privateCalls=0;
       const chant={id:'visible',title:'Visible without account service',default_repetition_target:27,available_targets:[27],original_text:'Original'} as Chant;
       const services:ChantExperienceServices={currentUid:()=> 'owner',subscribeAuth:listener=>{listener('owner');return()=>{};},renderAdmin:()=>null,
-        library:async()=>{if(mode==='failure')throw new Error('Public query failed');return {chants:mode==='published'?[chant]:[],categories:[]};},
+        practices:{list:async()=>{if(mode==='failure')throw new Error('Public query failed');return mode==='published'?[makePractice({name:'Visible Japa'})]:[];}},
         details:async()=>({chant,translations:[],media:[]}),getPublishedChant:async()=>chant,
         api:async()=>{privateCalls++;throw new Error('Private history unavailable');}};
       const view=await mount(<ChantExperienceContent services={services} onClose={()=>{}} onComplete={()=>{}}/>);
       const button=(label:string)=>Array.from(view.container.querySelectorAll('button')).find(b=>b.textContent===label)!;
       try {
-        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,250));});
-        assert.match(view.container.textContent!,/No published mantras yet/);assert.match(view.container.textContent!,/Saved drafts remain private/);assert.equal(privateCalls,0);
-        mode='failure';await act(async()=>button('Refresh library').click());
-        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,250));});
+        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
+        assert.match(view.container.textContent!,/No Japa practices available yet\. Please check back soon\./);assert.equal(privateCalls,0);
+        mode='failure';await act(async()=>button('Refresh practices').click());
+        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
         assert.match(view.container.querySelector('[role=alert]')!.textContent!,/Public query failed/);assert.equal(view.container.querySelector('.chant-empty'),null);
-        mode='published';await act(async()=>button('Retry catalogue').click());
-        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,250));});
+        mode='published';await act(async()=>button('Retry Japa practices').click());
+        await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
         await act(async()=>button('history').click());assert.equal(privateCalls,1);
-        await act(async()=>button('discover').click());assert.match(view.container.querySelector('.chant-card')!.textContent!,/Visible without account service/);
-        await act(async()=>view.container.querySelector<HTMLButtonElement>('.chant-card')!.click());
-        assert.match(view.container.textContent!,/No published audio/);assert.equal(view.container.querySelector('audio'),null);
-        assert.equal(button('Begin chanting').disabled,false);
+        await act(async()=>button('Japa practices').click());assert.match(view.container.querySelector('.chant-card')!.textContent!,/Visible Japa/);
+        assert.equal(button('history').disabled,false);
       } finally {await view.close();}
     });
     await t.test('public catalogue renders without private requests and survives private failure and retry',async()=>{

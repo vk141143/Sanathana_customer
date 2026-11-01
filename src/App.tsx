@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { chantApi, type ChantMe } from './lib/chant';
@@ -10,6 +10,7 @@ import { SplashModal } from './components/SplashModal';
 import { TempleJourney } from './components/TempleJourney';
 import { BottomNav } from './components/BottomNav';
 import { HomeView } from './components/HomeView';
+import { prefersReducedMotion } from './components/HomeHeroSequence';
 import { ScriptureReader } from './components/ScriptureReader';
 import { SadhanaTracker } from './components/SadhanaTracker';
 import { MeditationView } from './components/MeditationView';
@@ -42,6 +43,7 @@ export default function App() {
     return true;
   });
   const [currentTab, setCurrentTab] = useState<NavTab>('home');
+  const [homeRevealComplete, setHomeRevealComplete] = useState(prefersReducedMotion);
   const [showTempleMap, setShowTempleMap] = useState<boolean>(false);
 
   // Persistent User Profile State
@@ -121,8 +123,13 @@ export default function App() {
 
   const handleTabChange = (tab: NavTab) => {
     if (tab !== 'festivals') setSelectedFestivalId(null);
+    if (tab === 'home' && currentTab !== 'home') setHomeRevealComplete(prefersReducedMotion());
     setCurrentTab(tab);
   };
+
+  const handleHomeRevealComplete = useCallback(() => {
+    setHomeRevealComplete(true);
+  }, []);
 
   const handleToggleTask = (taskId: string) => {
     setSadhanaTasks(prev =>
@@ -238,6 +245,7 @@ export default function App() {
             onOpenChantingModal={() => setIsChantingOpen(true)}
             userEmail={user.email}
             readingProgress={user.reading_progress}
+            onRevealComplete={handleHomeRevealComplete}
           />
         );
 
@@ -371,7 +379,11 @@ export default function App() {
 
       {/* Global Bottom Navigation */}
       {!showSplash && !showTempleJourney && currentTab !== 'auth' && user.isLoggedIn && !showTempleMap && currentTab !== 'festivals' && (
-        <BottomNav currentTab={currentTab} onTabChange={handleTabChange} />
+        <BottomNav
+          currentTab={currentTab}
+          onTabChange={handleTabChange}
+          homeRevealComplete={homeRevealComplete}
+        />
       )}
 
       {/* Modals */}

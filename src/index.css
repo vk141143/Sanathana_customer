@@ -347,3 +347,277 @@
   background: radial-gradient(circle at 35% 35%, #3a3530, #252018 60%, #1a1710);
   border: 2px solid rgba(120, 110, 90, 0.35);
 }
+
+/* One-shot Home reveal, triggered after the Krishna frame sequence completes. */
+.home-divine-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 34%, rgba(245, 204, 126, 0.22), transparent 62%);
+  mix-blend-mode: screen;
+}
+
+.home-sacred-mandala {
+  position: absolute;
+  z-index: 2;
+  top: -12%;
+  left: 50%;
+  width: min(92vw, 420px);
+  height: auto;
+  overflow: visible;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.home-mandala-rotation {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.75;
+}
+
+.home-mandala-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.home-reveal-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.home-title-letter {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(7px);
+}
+
+.home-view[data-home-reveal="complete"] .home-divine-glow {
+  animation: home-divine-glow 2.2s ease-out 0.08s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-sacred-mandala {
+  animation: home-mandala-opacity 1.4s ease-out 0.1s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-mandala-rotation {
+  animation: home-mandala-settle 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-mandala-stroke {
+  animation: home-mandala-draw 0.9s ease-out both;
+}
+
+.home-view[data-home-reveal="complete"] .home-reveal-logo {
+  animation: home-reveal-fade 0.65s ease-out 0.12s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-reveal-header {
+  animation: home-reveal-fade 0.55s ease-out 0.08s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-reveal-title {
+  animation: home-title-spacing 0.85s ease-out both;
+}
+
+.home-view[data-home-reveal="complete"] .home-title-letter {
+  animation: home-title-letter 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.home-view[data-home-reveal="complete"] .home-reveal-subtitle {
+  animation: home-reveal-fade-up 0.5s ease-out 1s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-reveal-bell {
+  animation: home-reveal-fade-up 0.6s ease-out 1.2s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-verse-reveal {
+  animation: home-verse-unfold 0.85s cubic-bezier(0.2, 0.7, 0.2, 1) 1.48s both;
+}
+
+.home-verse-reveal::before {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border: 1px solid rgba(212, 168, 95, 0.34);
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+  clip-path: inset(0 100% 0 0);
+}
+
+.home-view[data-home-reveal="complete"] .home-verse-reveal::before {
+  animation: home-verse-border 1s ease-out 1.48s both;
+}
+
+.home-verse-accent {
+  transform: scaleY(0);
+  transform-origin: top;
+}
+
+.home-view[data-home-reveal="complete"] .home-verse-accent {
+  animation: home-verse-accent 0.75s ease-out 1.8s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-verse-label {
+  animation: home-reveal-fade 0.45s ease-out 1.7s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-verse-content {
+  opacity: 0;
+  transform: translateY(7px);
+  animation: home-reveal-fade-up 0.65s ease-out 2s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-verse-bookmark {
+  animation: home-reveal-fade 0.5s ease-out 2.55s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-reveal-sadhana {
+  animation: home-reveal-fade-up 0.75s ease-out 2.7s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-sadhana-reveal {
+  animation: home-reveal-fade-up 0.75s ease-out 2.85s both;
+}
+
+.home-view[data-home-reveal="complete"] .home-continue-reading {
+  animation-delay: 3s;
+}
+
+.home-view[data-home-reveal="complete"] .home-discover {
+  animation-delay: 3.15s;
+}
+
+.home-view[data-home-reveal="complete"] .home-daily-streak {
+  animation-delay: 3.3s;
+}
+
+.home-view[data-home-reveal="complete"] .home-content-reveal {
+  animation-name: home-reveal-fade-up;
+  animation-duration: 0.7s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.home-view[data-home-reveal="pending"] .home-reveal-hidden,
+.home-view[data-home-reveal="pending"] .home-title-letter {
+  opacity: 0;
+  pointer-events: none;
+}
+
+nav[data-home-reveal="complete"] {
+  animation: home-nav-reveal 0.7s ease-out 3.35s both;
+}
+
+nav[data-home-reveal="pending"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes home-divine-glow {
+  0% { opacity: 0; }
+  42% { opacity: 0.28; }
+  100% { opacity: 0.11; }
+}
+
+@keyframes home-mandala-opacity {
+  from { opacity: 0; }
+  to { opacity: 0.29; }
+}
+
+@keyframes home-mandala-settle {
+  from { transform: rotate(-3deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes home-mandala-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes home-reveal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes home-reveal-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes home-title-letter {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes home-title-spacing {
+  from { letter-spacing: 0.3em; }
+  to { letter-spacing: 0.22em; }
+}
+
+@keyframes home-verse-unfold {
+  from { opacity: 0; clip-path: inset(0 0 100% 0); }
+  to { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+
+@keyframes home-verse-border {
+  to { clip-path: inset(0); }
+}
+
+@keyframes home-verse-accent {
+  to { transform: scaleY(1); }
+}
+
+@keyframes home-nav-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-divine-glow,
+  .home-sacred-mandala {
+    display: none !important;
+  }
+
+  .home-view .home-reveal-hidden,
+  .home-view .home-title-letter,
+  nav[data-home-reveal="pending"] {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .home-view .home-title-letter,
+  .home-view .home-verse-content {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .home-view .home-verse-reveal {
+    clip-path: none !important;
+  }
+
+  .home-view .home-verse-accent {
+    transform: none !important;
+  }
+
+  .home-view .home-reveal-logo,
+  .home-view .home-reveal-header,
+  .home-view .home-reveal-title,
+  .home-view .home-title-letter,
+  .home-view .home-reveal-subtitle,
+  .home-view .home-reveal-bell,
+  .home-view .home-verse-reveal,
+  .home-view .home-verse-reveal::before,
+  .home-view .home-verse-accent,
+  .home-view .home-verse-label,
+  .home-view .home-verse-content,
+  .home-view .home-verse-bookmark,
+  .home-view .home-reveal-sadhana,
+  .home-view .home-sadhana-reveal,
+  .home-view .home-content-reveal,
+  nav[data-home-reveal="complete"] {
+    animation: none !important;
+  }
+}
