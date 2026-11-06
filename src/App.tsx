@@ -43,7 +43,19 @@ export default function App() {
     } catch {}
     return true;
   });
-  const [currentTab, setCurrentTab] = useState<NavTab>('home');
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
+    const tab = window.location.hash.slice(1);
+    return ['home','library','explore','sadhana','profile','meditation','achievements','auth','notifications','festivals'].includes(tab) ? tab as NavTab : 'home';
+  });
+  useEffect(() => {
+    if (!window.history.state?.tab) window.history.replaceState({ ...window.history.state, tab: currentTab }, '');
+    const back = () => {
+      const tab = window.history.state?.tab;
+      if (['home','library','explore','sadhana','profile','meditation','achievements','auth','notifications','festivals'].includes(tab)) setCurrentTab(tab);
+    };
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, []);
   const [homeHeroSession, dispatchHomeHeroSession] = useReducer(
     homeHeroSessionReducer,
     INITIAL_HOME_HERO_SESSION,
@@ -126,6 +138,11 @@ export default function App() {
   }, [sadhanaTasks]);
 
   const handleTabChange = (tab: NavTab) => {
+    if (tab !== currentTab || window.history.state?.sadhanaPractice || window.history.state?.sadhanaView) {
+      window.history.pushState({ tab }, '', `#${tab}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      window.scrollTo(0, 0);
+    }
     if (tab !== 'festivals') setSelectedFestivalId(null);
     if (currentTab === 'home' && tab !== 'home') {
       dispatchHomeHeroSession({ type: 'left-home' });
@@ -406,6 +423,7 @@ export default function App() {
 
       {/* Modals */}
       <GratitudeModal
+        entries={user.gratitudeLogs}
         isOpen={isGratitudeOpen}
         onClose={() => setIsGratitudeOpen(false)}
         onSaveGratitude={handleSaveGratitude}

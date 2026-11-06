@@ -1,29 +1,22 @@
 import React from 'react';
-import { AnimatedReveal, RevealItem } from './AnimatedTextReveal';
-import { DevotionalImage } from './DevotionalImage';
 import { SupabaseEmotion } from '../EmotionDetailView';
 
 interface Props { emotion: SupabaseEmotion; }
 
 export const MeaningStep: React.FC<Props> = ({ emotion }) => (
-  <AnimatedReveal className="space-y-5 pb-10">
-    <RevealItem>
+  <div className="space-y-5 pb-10">
+    <div>
       <div>
         <h2 className="font-cinzel text-xl font-bold text-[#FFD978]">What This Means</h2>
         <p className="text-[#C9B9A2] text-xs font-label-sm uppercase tracking-widest mt-0.5">
           The deeper spiritual lesson
         </p>
       </div>
-    </RevealItem>
+    </div>
 
-    {emotion.means_image_url && (
-      <RevealItem>
-        <DevotionalImage src={emotion.means_image_url} alt="Meaning Illustration" className="w-full h-48" />
-      </RevealItem>
-    )}
 
     {emotion.what_it_means && (
-      <RevealItem>
+      <div>
         <div
           className="rounded-2xl p-5"
           style={{ background: 'rgba(33,19,13,0.8)', border: '1px solid rgba(233,180,76,0.2)' }}
@@ -32,10 +25,10 @@ export const MeaningStep: React.FC<Props> = ({ emotion }) => (
             {emotion.what_it_means}
           </p>
         </div>
-      </RevealItem>
+      </div>
     )}
 
-    <RevealItem>
+    <div>
       <div
         className="rounded-2xl p-4 flex gap-3 items-start"
         style={{
@@ -49,6 +42,6 @@ export const MeaningStep: React.FC<Props> = ({ emotion }) => (
           {emotion.name} clouds judgment before it harms others. Awareness is the first step to freedom.
         </p>
       </div>
-    </RevealItem>
-  </AnimatedReveal>
+    </div>
+  </div>
 );

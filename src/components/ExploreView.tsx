@@ -24,10 +24,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [selectedEmotion, setSelectedEmotion] = useState<SupabaseEmotion | null>(null);
   const [dbEmotions, setDbEmotions] = useState<SupabaseEmotion[]>([]);
 
+  const [loadingEmotions, setLoadingEmotions] = useState(true);
+  const [emotionError, setEmotionError] = useState(false);
+  const [retry, setRetry] = useState(0);
+
   useEffect(() => {
+    let cancelled = false;
+    setLoadingEmotions(true);
+    setEmotionError(false);
     supabase.from('emotions').select('*').eq('is_active', true).order('sort_order')
-      .then(({ data }) => { if (data) setDbEmotions(data as SupabaseEmotion[]); });
-  }, []);
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setEmotionError(Boolean(error));
+        if (data) setDbEmotions(data as SupabaseEmotion[]);
+        setLoadingEmotions(false);
+      }, () => {
+        if (!cancelled) { setEmotionError(true); setLoadingEmotions(false); }
+      });
+    return () => { cancelled = true; };
+  }, [retry]);
 
   const filteredTemples = temples.filter(t =>
     t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -37,6 +52,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   if (selectedEmotion) {
     return (
       <EmotionHealingPage
+        key={selectedEmotion.id}
         emotion={selectedEmotion}
         onBack={() => setSelectedEmotion(null)}
       />
@@ -192,12 +208,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 Select an emotion to discover sacred verses, guidance & action steps.
               </p>
             </div>
+            {loadingEmotions && <p role="status" className="text-[#d2c4b3] py-8">Loading sacred guidance…</p>}
+            {emotionError && <div role="alert" className="py-6 text-[#d2c4b3]">
+              <p>Unable to load guidance. Please try again.</p>
+              <button onClick={() => setRetry(value => value + 1)} className="text-[#f2c377] underline py-3">Try Again</button>
+            </div>}
+            {!loadingEmotions && !emotionError && (
             <div className="grid grid-cols-2 gap-4">
               {dbEmotions.map(em => (
-                <div
+                <button type="button"
                   key={em.id}
                   onClick={() => setSelectedEmotion(em)}
-                  className="relative h-36 rounded-[24px] overflow-hidden golden-border group cursor-pointer shadow-lg active:scale-95 transition-transform"
+                  className="text-left relative h-36 rounded-[24px] overflow-hidden golden-border group cursor-pointer shadow-lg active:scale-95 transition-transform"
                 >
                   <img
                     src={em.outside_image_url || em.card_image_url || ''}
@@ -209,12 +231,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     <h3 className="text-base text-[#f2c377] font-cinzel font-bold tracking-wider">{em.name}</h3>
                     <p className="text-[10px] text-gray-300 font-serif-main opacity-80 mt-0.5">Tap to view scripture</p>
                   </div>
-                </div>
+                </button>
               ))}
               {dbEmotions.length === 0 && (
                 <p className="col-span-2 text-center text-[#d2c4b3]/40 text-xs py-8">No emotions added yet.</p>
               )}
             </div>
+            )}
           </section>
         )}
       </div>

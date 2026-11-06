@@ -1,29 +1,22 @@
 import React from 'react';
-import { AnimatedReveal, RevealItem } from './AnimatedTextReveal';
-import { DevotionalImage } from './DevotionalImage';
 import { SupabaseEmotion } from '../EmotionDetailView';
 
 interface Props { emotion: SupabaseEmotion; }
 
 export const DivineExampleStep: React.FC<Props> = ({ emotion }) => (
-  <AnimatedReveal className="space-y-5 pb-10">
-    <RevealItem>
+  <div className="space-y-5 pb-10">
+    <div>
       <div>
         <h2 className="font-cinzel text-xl font-bold text-[#FFD978]">Divine Example</h2>
         <p className="text-[#C9B9A2] text-xs font-label-sm uppercase tracking-widest mt-0.5">
           Wisdom from the sacred stories
         </p>
       </div>
-    </RevealItem>
+    </div>
 
-    {emotion.example_image_url && (
-      <RevealItem>
-        <DevotionalImage src={emotion.example_image_url} alt="Divine Example" className="w-full h-52" />
-      </RevealItem>
-    )}
 
     {emotion.example_text && (
-      <RevealItem>
+      <div>
         <div
           className="rounded-2xl p-5 space-y-3"
           style={{ background: 'rgba(33,19,13,0.8)', border: '1px solid rgba(233,180,76,0.2)' }}
@@ -32,10 +25,10 @@ export const DivineExampleStep: React.FC<Props> = ({ emotion }) => (
             {emotion.example_text}
           </p>
         </div>
-      </RevealItem>
+      </div>
     )}
 
-    <RevealItem>
+    <div>
       <div
         className="rounded-2xl p-4"
         style={{ background: 'rgba(43,26,16,0.7)', border: '1px solid rgba(233,180,76,0.25)' }}
@@ -45,6 +38,6 @@ export const DivineExampleStep: React.FC<Props> = ({ emotion }) => (
           Am I reacting because my ego is hurt, or am I acting to protect what is right?
         </p>
       </div>
-    </RevealItem>
-  </AnimatedReveal>
+    </div>
+  </div>
 );

@@ -1,28 +1,21 @@
 import React from 'react';
-import { AnimatedReveal, RevealItem } from './AnimatedTextReveal';
-import { DevotionalImage } from './DevotionalImage';
 import { SupabaseEmotion } from '../EmotionDetailView';
 
 interface Props { emotion: SupabaseEmotion; }
 
 export const GitaStep: React.FC<Props> = ({ emotion }) => (
-  <AnimatedReveal className="space-y-5 pb-10">
-    <RevealItem>
+  <div className="space-y-5 pb-10">
+    <div>
       <div>
         <h2 className="font-cinzel text-xl font-bold text-[#FFD978]">What Bhagavad Gita Says</h2>
         <p className="text-[#C9B9A2] text-xs font-label-sm uppercase tracking-widest mt-0.5">
           Ancient wisdom for {emotion.name.toLowerCase()}
         </p>
       </div>
-    </RevealItem>
+    </div>
 
-    {emotion.gita_image_url && (
-      <RevealItem>
-        <DevotionalImage src={emotion.gita_image_url} alt="Gita Illustration" className="w-full h-52" />
-      </RevealItem>
-    )}
 
-    <RevealItem>
+    <div>
       <div
         className="rounded-2xl p-5 space-y-3"
         style={{ background: 'rgba(33,19,13,0.8)', border: '1px solid rgba(233,180,76,0.2)' }}
@@ -37,18 +30,18 @@ export const GitaStep: React.FC<Props> = ({ emotion }) => (
           <p className="text-[#E9B44C] text-sm italic font-garamond">{emotion.gita_reference}</p>
         )}
       </div>
-    </RevealItem>
+    </div>
 
     {emotion.gita_transliteration && (
-      <RevealItem>
+      <div>
         <p className="text-[#C9B9A2] text-xs italic leading-relaxed px-1 whitespace-pre-line">
           {emotion.gita_transliteration}
         </p>
-      </RevealItem>
+      </div>
     )}
 
     {emotion.gita_translation && (
-      <RevealItem>
+      <div>
         <div
           className="rounded-2xl p-4"
           style={{ background: 'rgba(43,26,16,0.6)', border: '1px solid rgba(233,180,76,0.15)' }}
@@ -57,7 +50,7 @@ export const GitaStep: React.FC<Props> = ({ emotion }) => (
             "{emotion.gita_translation}"
           </p>
         </div>
-      </RevealItem>
+      </div>
     )}
-  </AnimatedReveal>
+  </div>
 );

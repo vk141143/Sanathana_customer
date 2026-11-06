@@ -7,10 +7,13 @@ import { chantConfigurationIssue, createChantRouter } from './server/chantRouter
 import { createHarvedCorsMiddleware } from './server/cors';
 import { createSarvamTtsRouter } from './server/sarvamTtsRouter';
 import { createSarvamTtsDependencies } from './server/sarvamTtsDependencies';
+import { createMeditationRouter, meditationConfigurationIssue } from './server/meditationRouter';
 
 dotenv.config({ path: ['.env.local', '.env'] });
 const chantSetupIssue = chantConfigurationIssue();
 if (chantSetupIssue) console.warn(`Private Chant features unavailable (public catalogue uses Supabase directly): ${chantSetupIssue}`);
+const meditationSetupIssue = meditationConfigurationIssue();
+if (meditationSetupIssue) console.warn(`Meditation features unavailable: ${meditationSetupIssue}`);
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -39,6 +42,7 @@ async function startServer() {
   app.use(createHarvedCorsMiddleware());
   app.use(express.json());
   app.use('/api/chant', createChantRouter());
+  app.use('/api/meditation', createMeditationRouter());
 
   app.use('/api/tts', createSarvamTtsRouter(createSarvamTtsDependencies()));
 

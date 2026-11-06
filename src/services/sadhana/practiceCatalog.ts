@@ -39,6 +39,14 @@ export interface SadhanaPractice {
   ambient_audio_url: string | null;
   media_type: string | null;
   media_url: string | null;
+  meditation_category_id?: string | null;
+  meditation_type?: 'guided' | 'silent' | 'breath_awareness' | 'concentration' | 'devotional';
+  default_duration_seconds?: number;
+  available_durations_seconds?: number[];
+  requires_audio?: boolean;
+  has_ambient_audio?: boolean;
+  has_bell?: boolean;
+  allow_silent_mode?: boolean;
   display_order: number;
   is_active: boolean;
   archived_at: string | null;
@@ -52,6 +60,8 @@ export interface PracticeRuntimeState {
   manuallyCompleted: boolean;
 }
 
+// Only columns on public.sadhana_practices. Meditation runtime defaults below
+// are not columns on this table and must not enter the shared SELECT.
 export const PRACTICE_COLUMNS = [
   'id',
   'name',
@@ -77,13 +87,14 @@ export const PRACTICE_COLUMNS = [
   'ambient_audio_url',
   'media_type',
   'media_url',
+  'meditation_category_id',
   'display_order',
   'is_active',
   'archived_at',
 ].join(',');
 type PracticeQueryResult = {
   data: unknown[] | null;
-  error: { code?: string; message: string } | null;
+  error: { code?: string; message: string; details?: string; hint?: string } | null;
 };
 type PracticeQuery = () => PromiseLike<PracticeQueryResult>;
 
@@ -135,6 +146,19 @@ export function normalizeSadhanaPractice(value: unknown): SadhanaPractice | null
     ambient_audio_url: optionalString(row.ambient_audio_url),
     media_type: optionalString(row.media_type),
     media_url: optionalString(row.media_url),
+    meditation_category_id: optionalString(row.meditation_category_id),
+    meditation_type: ['guided', 'silent', 'breath_awareness', 'concentration', 'devotional'].includes(String(row.meditation_type))
+      ? row.meditation_type as SadhanaPractice['meditation_type']
+      : 'guided',
+    default_duration_seconds: optionalNumber(row.default_duration_seconds) ?? 600,
+    available_durations_seconds: Array.isArray(row.available_durations_seconds)
+      ? row.available_durations_seconds.filter((duration): duration is number =>
+        typeof duration === 'number' && Number.isInteger(duration) && duration >= 60 && duration <= 7200)
+      : [180, 300, 600, 900, 1200, 1800],
+    requires_audio: row.requires_audio === true,
+    has_ambient_audio: row.has_ambient_audio === true,
+    has_bell: row.has_bell !== false,
+    allow_silent_mode: row.allow_silent_mode !== false,
     display_order: optionalNumber(row.display_order) ?? 0,
     is_active: row.is_active === true,
     archived_at: optionalString(row.archived_at),
@@ -167,7 +191,7 @@ export async function fetchActiveSadhanaPractices(
     const { data, error } = await query();
 
     if (error) {
-      console.error('Sadhana practice catalogue fetch failed:', { code: error.code, message: error.message });
+      console.error('Sadhana practice catalogue fetch failed:', { operation: 'active Sadhana list', code: error.code, message: error.message, details: error.details, hint: error.hint });
       throw new Error('Unable to load Sadhana practices. Please retry.');
     }
 

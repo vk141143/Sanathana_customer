@@ -1,152 +1,43 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { SupabaseEmotion } from '../EmotionDetailView';
-import { HealingProgress } from './HealingProgress';
-import { GitaStep } from './GitaStep';
-import { MeaningStep } from './MeaningStep';
-import { DivineExampleStep } from './DivineExampleStep';
-import { OvercomeStep } from './OvercomeStep';
-import { MantraStep } from './MantraStep';
-
-interface Props {
-  emotion: SupabaseEmotion;
-  onBack: () => void;
-}
-
-const pageVariants = {
-  enter: (dir: number) => ({
-    opacity: 0,
-    x: dir > 0 ? 40 : -40,
-    scale: 0.98,
-    filter: 'blur(10px)',
-  }),
-  center: {
-    opacity: 1,
-    x: 0,
-    scale: 1,
-    filter: 'blur(0px)',
-    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] },
-  },
-  exit: (dir: number) => ({
-    opacity: 0,
-    x: dir > 0 ? -25 : 25,
-    scale: 0.99,
-    filter: 'blur(10px)',
-    transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] },
-  }),
-};
-
-export const EmotionHealingPage: React.FC<Props> = ({ emotion, onBack }) => {
-  const [currentStep, setCurrentStep] = useState(1);
-  const [direction, setDirection] = useState<1 | -1>(1);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  const navigate = useCallback(
-    (dir: 1 | -1) => {
-      if (isTransitioning) return;
-      const next = currentStep + dir;
-      if (next < 1 || next > 5) return;
-      setIsTransitioning(true);
-      setDirection(dir);
-      setTimeout(() => {
-        setCurrentStep(next);
-        contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-        setTimeout(() => setIsTransitioning(false), 700);
-      }, 350);
-    },
-    [isTransitioning, currentStep]
-  );
-
-  const renderStep = () => {
-    switch (currentStep) {
-      case 1: return <GitaStep emotion={emotion} />;
-      case 2: return <MeaningStep emotion={emotion} />;
-      case 3: return <DivineExampleStep emotion={emotion} />;
-      case 4: return <OvercomeStep emotion={emotion} />;
-      case 5: return <MantraStep emotion={emotion} onComplete={onBack} />;
-      default: return null;
-    }
-  };
-
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import type { SupabaseEmotion } from '../EmotionDetailView';
+import { getReadingStages, type StageId, type TopicKind } from './readingStages';
+interface Props { emotion: SupabaseEmotion; onBack: () => void; topicKind?: TopicKind }
+export const EmotionHealingPage: React.FC<Props> = props => (
+  <TopicReader key={`${props.topicKind ?? 'emotion'}:${props.emotion.id}`} {...props} />
+);
+function TopicReader({ emotion, onBack, topicKind = 'emotion' }: Props) {
+  const [stageId, setStageId] = useState<StageId>('understanding');
+  const stages = getReadingStages(emotion, topicKind);
+  const index = stages.findIndex(stage => stage.id === stageId);
+  const stage = stages[index];
+  const scroller = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (scroller.current) scroller.current.scrollTop = 0; }, [stageId]);
+  const arrowClass = 'shrink-0 p-3 rounded-full border border-[#f2c377]/30 text-[#f2c377] disabled:opacity-25 focus-visible:outline-2 focus-visible:outline-[#f2c377]';
   return (
-    <div
-      className="fixed inset-0 z-[60] flex flex-col max-w-md mx-auto"
-      style={{ background: '#120B08' }}
-    >
-      {/* Scrollable content area */}
-      <div ref={contentRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-        {/* Banner + sticky progress */}
-        <HealingProgress
-          currentStep={currentStep}
-          emotionName={emotion.name}
-          emotionTagline={emotion.tagline}
-          bannerImageUrl={emotion.banner_image_url}
-          onBackToList={onBack}
-        />
-
-        {/* Animated step content */}
-        <div className="px-5 pt-5 overflow-hidden">
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.section
-              key={currentStep}
-              custom={direction}
-              variants={pageVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-            >
-              {renderStep()}
-            </motion.section>
-          </AnimatePresence>
-
-          {/* Two arrows below content */}
-          <div className="flex items-center justify-between pt-6 pb-10">
-            <motion.button
-              whileTap={{ scale: 0.88 }}
-              onClick={() => navigate(-1)}
-              disabled={isTransitioning || currentStep === 1}
-              aria-label="Previous step"
-              className="flex items-center justify-center rounded-full transition-opacity"
-              style={{
-                width: 52,
-                height: 52,
-                opacity: currentStep === 1 ? 0.2 : 1,
-                background: 'rgba(43,26,16,0.9)',
-                border: '1.5px solid rgba(233,180,76,0.4)',
-              }}
-            >
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path d="M14 5L8 11l6 6" stroke="#E9B44C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </motion.button>
-
-            <span className="text-[#C9B9A2] text-xs font-label-sm uppercase tracking-widest">
-              {currentStep} / 5
-            </span>
-
-            <motion.button
-              whileTap={{ scale: 0.88 }}
-              onClick={() => navigate(1)}
-              disabled={isTransitioning || currentStep === 5}
-              aria-label="Next step"
-              className="flex items-center justify-center rounded-full transition-opacity"
-              style={{
-                width: 52,
-                height: 52,
-                opacity: currentStep === 5 ? 0.2 : 1,
-                background: 'linear-gradient(135deg, #FFD978, #E9B44C)',
-                border: '1.5px solid rgba(233,180,76,0.5)',
-                boxShadow: currentStep === 5 ? 'none' : '0 0 18px rgba(233,180,76,0.4)',
-              }}
-            >
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path d="M8 5l6 6-6 6" stroke="#120B08" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </motion.button>
+    <div className="healing-reader fixed inset-x-0 top-0 bottom-[calc(100px+env(safe-area-inset-bottom))] z-40 max-w-lg mx-auto flex flex-col bg-[#120B08] text-[#F8EBD2] [overflow-wrap:anywhere]">
+      <header className="flex items-center gap-3 px-5 py-4 border-b border-[#f2c377]/20 shrink-0">
+        <button type="button" onClick={onBack} aria-label="Back to Emotions & Healing" className={arrowClass}><ArrowLeft size={20} aria-hidden="true" /></button>
+        <h1 className="font-cinzel text-xl font-bold min-w-0 text-[#f2c377]">{emotion.name}</h1>
+      </header>
+      <nav aria-label="Reading sections" className="flex justify-between px-5 py-3 shrink-0">
+        <button type="button" aria-label="Previous section" disabled={index === 0} onClick={() => setStageId(stages[index - 1].id)} className={arrowClass}><ArrowLeft size={20} aria-hidden="true" /></button>
+        <button type="button" aria-label="Next section" disabled={index === stages.length - 1} onClick={() => setStageId(stages[index + 1].id)} className={arrowClass}><ArrowRight size={20} aria-hidden="true" /></button>
+      </nav>
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+        <article key={`${emotion.id}:${stage.id}`} aria-labelledby="healing-stage-title" className="py-4">
+          <h2 id="healing-stage-title" className="font-cinzel text-2xl leading-relaxed text-[#f2c377] mb-6" aria-live="polite">{stage.title}</h2>
+          {stage.blocks.length === 0 && <p className="text-[#C9B9A2] leading-relaxed">Content for this section of {emotion.name} has not been published yet.</p>}
+          <div className="space-y-6">
+            {stage.blocks.map(block => <section key={block.id}>
+              {block.heading && <h3 className="font-cinzel text-lg text-[#f2c377] mb-2">{block.heading}</h3>}
+              {block.kind === 'quote'
+                ? <blockquote className="border-l-2 border-[#f2c377]/40 pl-4 font-serif-main text-lg leading-loose whitespace-pre-wrap">{block.text}</blockquote>
+                : <p lang={block.lang} className={`whitespace-pre-wrap text-lg leading-loose ${block.kind === 'verse' ? 'font-sanskrit text-[#f2c377]' : 'font-serif-main'}`}>{block.text}</p>}
+            </section>)}
           </div>
-        </div>
+        </article>
       </div>
     </div>
   );
-};
+}

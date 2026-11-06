@@ -1,447 +1,475 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 import { NavTab } from '../types';
+import { meditationApi, type MeditationHistory, type MeditationLibrary, type MeditationSession } from '../services/meditationApi';
+import { isSafePlayableUrl, type SadhanaPractice } from '../services/sadhana/practiceCatalog';
 
 interface MeditationViewProps {
   onBack?: () => void;
   onTabChange?: (tab: NavTab) => void;
   onCompleteSession?: (minutes: number) => void;
+  initialPractice?: SadhanaPractice;
+  preferredLanguage?: string;
+}
+
+type ViewMode = 'library' | 'session' | 'history';
+type SessionActionResult = { session: MeditationSession; xp_awarded: number; progress?: MeditationHistory['progress'] };
+
+function formatTime(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
 }
 
 export const MeditationView: React.FC<MeditationViewProps> = ({
   onBack,
   onTabChange,
   onCompleteSession,
+  initialPractice,
+  preferredLanguage = 'en',
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(600); // 10 mins = 600 seconds
-  const [selectedDuration, setSelectedDuration] = useState(10); // mins
-  const [breathPhase, setBreathPhase] = useState<'In' | 'Hold' | 'Out'>('In');
-  const [breathText, setBreathText] = useState('Breathe In Peace');
-  
-  // Toggles for secondary controls
-  const [isMusicActive, setIsMusicActive] = useState(false);
-  const [isBellActive, setIsBellActive] = useState(true);
-  const [isAmbientActive, setIsAmbientActive] = useState(false);
-  
-  // Toast notifications
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [mode, setMode] = useState<ViewMode>(initialPractice ? 'session' : 'library');
+  const [library, setLibrary] = useState<MeditationLibrary | null>(null);
+  const [history, setHistory] = useState<MeditationHistory | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialPractice?.id ?? null);
+  const [session, setSession] = useState<MeditationSession | null>(null);
+  const sessionRef = useRef<MeditationSession | null>(null);
+  const actionBusy = useRef(false);
+  const localStart = useRef<number | null>(null);
+  const completionRequested = useRef(false);
+  const [now, setNow] = useState(Date.now());
+  const [selectedDuration, setSelectedDuration] = useState(initialPractice?.default_duration_seconds ?? 600);
+  const [loading, setLoading] = useState(true);
+  const [playing, setPlaying] = useState(false);
+  const [savingReflection, setSavingReflection] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [mood, setMood] = useState<string | null>(null);
+  const [reflection, setReflection] = useState('');
+  const [intention, setIntention] = useState('');
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [bellEnabled, setBellEnabled] = useState(true);
 
-  const handleGoBack = () => {
-    if (onBack) {
-      onBack();
-    } else if (onTabChange) {
-      onTabChange('sadhana');
+  const selectedPractice = useMemo(() =>
+    library?.practices.find(item => item.id === selectedId) ??
+      (initialPractice?.id === selectedId ? initialPractice : null),
+  [initialPractice, library, selectedId]);
+  const selectedTranslation = library?.translations.find(item =>
+    item.practice_id === selectedId && item.language_code === preferredLanguage.split('-')[0]);
+  const practiceAudio = library?.audio.filter(item => item.practice_id === selectedId) ?? [];
+  const languageAudio = practiceAudio.filter(item => item.language_code === preferredLanguage.split('-')[0]);
+  const guidedAudio = languageAudio.find(item => item.audio_type === 'guided' && item.is_default) ??
+    languageAudio.find(item => item.audio_type === 'guided') ??
+    practiceAudio.find(item => item.audio_type === 'guided' && item.is_default) ??
+    practiceAudio.find(item => item.audio_type === 'guided');
+  const ambientAudio = languageAudio.find(item => item.audio_type === 'ambient' && item.is_default) ??
+    languageAudio.find(item => item.audio_type === 'ambient') ??
+    practiceAudio.find(item => item.audio_type === 'ambient' && item.is_default) ??
+    practiceAudio.find(item => item.audio_type === 'ambient');
+  const currentPhases = (library?.phases.filter(item => item.practice_id === selectedId) ?? [])
+    .sort((left, right) => left.display_order - right.display_order);
+  const durations = selectedPractice?.available_durations_seconds?.length
+    ? selectedPractice.available_durations_seconds
+    : [180, 300, 600, 900, 1200, 1800];
+
+  useEffect(() => onAuthStateChanged(auth, user => {
+    setSignedIn(!!user);
+    if (!user) {
+      setPlaying(false);
+      setSession(null);
+      sessionRef.current = null;
+      localStart.current = null;
+      setLibrary(null);
+      setHistory(null);
     }
-  };
+  }), []);
 
-  const showToast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 3000);
-  };
-
-  // Timer countdown
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isPlaying && timeLeft > 0) {
-      timer = setInterval(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0 && isPlaying) {
-      setIsPlaying(false);
-      showToast('Meditation Completed! Namaste 🙏');
-      if (onCompleteSession) {
-        onCompleteSession(selectedDuration);
+    if (signedIn !== true) {
+      setLoading(signedIn === null);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setError('');
+    Promise.all([
+      meditationApi.getLibrary(preferredLanguage.split('-')[0]),
+      meditationApi.getHistory(),
+    ]).then(([catalogue, saved]) => {
+      if (!active) return;
+      setLibrary(catalogue);
+      setHistory(saved);
+      const prefs = saved.preferences;
+      setAudioEnabled(prefs?.ambient_enabled ?? true);
+      setBellEnabled(prefs?.bell_enabled ?? true);
+      if (!initialPractice && !selectedId && catalogue.recommendations.length) {
+        setSelectedId(catalogue.recommendations[0].practice_id);
       }
-    }
-    return () => clearInterval(timer);
-  }, [isPlaying, timeLeft, selectedDuration, onCompleteSession]);
+    }).catch(cause => {
+      if (active) setError(cause instanceof Error ? cause.message : 'Meditation Library could not be loaded.');
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [preferredLanguage, signedIn]);
 
-  // Breathing Cycle
   useEffect(() => {
-    let breathTimer: NodeJS.Timeout;
-    if (isPlaying) {
-      const cycle = () => {
-        setBreathPhase('In');
-        setBreathText('Breathe In Peace...');
-        setTimeout(() => {
-          setBreathPhase('Hold');
-          setBreathText('Hold Gently...');
-          setTimeout(() => {
-            setBreathPhase('Out');
-            setBreathText('Breathe Out Stress...');
-          }, 4000);
-        }, 4000);
-      };
+    if (!playing || !session) return;
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+      const started = localStart.current;
+      const elapsed = session.active_duration_seconds +
+        (started === null ? 0 : Math.floor((Date.now() - started) / 1000));
+      if (elapsed >= session.planned_duration_seconds && !completionRequested.current && !actionBusy.current) {
+        completionRequested.current = true;
+        void performAction('complete');
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [playing, session]);
 
-      cycle();
-      breathTimer = setInterval(cycle, 12000);
-    } else {
-      setBreathText('Breathe In Peace\nBreathe Out Stress');
-    }
-    return () => clearInterval(breathTimer);
-  }, [isPlaying]);
+  useEffect(() => {
+    if (!playing || !session) return;
+    const heartbeat = window.setInterval(() => {
+      void performAction('heartbeat');
+    }, 15000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void performAction('heartbeat');
+    };
 
-  // Temple Bell Sound Synthesizer
-  const playBellSound = () => {
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(heartbeat);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [playing, session?.id]);
+
+  const setCurrentSession = (updated: MeditationSession | null) => {
+    sessionRef.current = updated;
+    setSession(updated);
+  };
+
+  const performAction = async (action: string) => {
+    const current = sessionRef.current;
+    if (!current || actionBusy.current) return;
+    actionBusy.current = true;
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const result = await meditationApi.sessionAction(current.id, {
+        action,
+        version: current.version,
+        position_seconds: Math.min(current.planned_duration_seconds, current.active_duration_seconds +
+          (localStart.current === null ? 0 : Math.floor((Date.now() - localStart.current) / 1000))),
+      });
+      setCurrentSession(result.session);
+      localStart.current = action === 'heartbeat' || action === 'resume' ? Date.now() : null;
+      if (action === 'pause' || action === 'complete' || action === 'abandon') setPlaying(false);
+      if (action === 'complete') {
+        setNotice(`Session completed. ${result.xp_awarded} XP earned.`);
+        setMode('session');
+        setHistory(currentHistory => currentHistory
+          ? { ...currentHistory, progress: result.progress ?? currentHistory.progress }
+          : currentHistory);
+        onCompleteSession?.(Math.floor(result.session.active_duration_seconds / 60));
+      }
+      if (action === 'abandon') {
+        setNotice('Session saved. You can return to the Meditation Library.');
+        setMode('library');
+      }
+      setError('');
+    } catch (cause) {
+      if (cause instanceof Error && cause.message.toLowerCase().includes('changed')) {
+        try {
+          const fresh = await meditationApi.getSession(current.id);
+          setCurrentSession(fresh);
+          localStart.current = fresh.status === 'in_progress' ? Date.now() : null;
+        } catch (reloadError) {
+          setError(reloadError instanceof Error ? reloadError.message : 'Session state could not be refreshed.');
+        }
+      } else {
+        setError(cause instanceof Error ? cause.message : 'Meditation session could not be updated.');
+      }
+      if (action === 'complete') completionRequested.current = false;
+    } finally {
+      actionBusy.current = false;
+    }
+  };
 
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(432, ctx.currentTime); // 432Hz sacred frequency
-      osc.frequency.exponentialRampToValueAtTime(108, ctx.currentTime + 3);
+  const start = async () => {
+    if (!selectedPractice) return;
+    setError('');
+    setNotice('');
+    completionRequested.current = false;
+    try {
+      const created = await meditationApi.startSession({
+        practice_id: selectedPractice.id,
+        planned_duration_seconds: selectedDuration,
+        client_session_key: crypto.randomUUID(),
+      });
+      playBell();
+      setCurrentSession(created);
+      localStart.current = Date.now();
+      setPlaying(true);
+      setMode('session');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Meditation session could not be started.');
+    }
+  };
 
-      gain.gain.setValueAtTime(0.5, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 3.5);
+  const resume = async (saved: MeditationSession) => {
+    try {
+      const fresh = await meditationApi.getSession(saved.id);
+      setCurrentSession(fresh);
+      setSelectedId(fresh.practice_id);
+      setSelectedDuration(fresh.planned_duration_seconds);
+      completionRequested.current = false;
+      if (fresh.status === 'paused') {
+        const result = await meditationApi.sessionAction(fresh.id, {
+          action: 'resume',
+          version: fresh.version,
+        });
+        setCurrentSession(result.session);
+      }
+      localStart.current = Date.now();
+      setPlaying(true);
+      setMode('session');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Meditation session could not be resumed.');
+    }
+  };
 
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+  const savePreferences = async () => {
+    try {
+      await meditationApi.savePreferences({
+        preferred_duration_seconds: selectedDuration,
+        ambient_enabled: audioEnabled,
+        bell_enabled: bellEnabled,
+        preferred_language: preferredLanguage.split('-')[0],
+        preferred_session_type: selectedPractice?.meditation_type ?? null,
+      });
+      setNotice('Meditation preferences saved.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Meditation preferences could not be saved.');
+    }
+  };
 
-      osc.start();
-      osc.stop(ctx.currentTime + 3.5);
-      showToast('🔔 Temple Bell Chime');
+  const playBell = () => {
+    if (!bellEnabled || selectedPractice?.has_bell === false) return;
+    try {
+      const context = new window.AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(432, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(108, context.currentTime + 2.5);
+      gain.gain.setValueAtTime(0.25, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 3);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.onended = () => { void context.close(); };
+      oscillator.start();
+      oscillator.stop(context.currentTime + 3);
     } catch {
-      showToast('🔔 Bell Ringing');
+      setNotice('Your device could not play the optional bell. Meditation can continue without it.');
     }
   };
 
-  const handleStartToggle = () => {
-    if (!isPlaying) {
-      if (isBellActive) playBellSound();
-      setIsPlaying(true);
-      showToast('Meditation Session Started');
-    } else {
-      setIsPlaying(false);
-      showToast('Session Paused');
+  const leaveSession = async () => {
+    if (playing && sessionRef.current?.status === 'in_progress') await performAction('pause');
+    setPlaying(false);
+    setMode('library');
+  };
+
+  const saveReflection = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!session) return;
+    setSavingReflection(true);
+    setError('');
+    try {
+      await meditationApi.saveReflection(session.id, { mood, reflection_text: reflection.trim(), intention_text: intention.trim() });
+      setNotice('Your reflection is saved privately.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Your reflection could not be saved.');
+    } finally {
+      setSavingReflection(false);
     }
   };
 
-  const handleTimerChange = () => {
-    const options = [5, 10, 15, 20];
-    const nextIdx = (options.indexOf(selectedDuration) + 1) % options.length;
-    const nextDuration = options[nextIdx];
-    setSelectedDuration(nextDuration);
-    setTimeLeft(nextDuration * 60);
-    showToast(`Timer set to ${nextDuration} Minutes`);
+  const activeSeconds = session
+    ? Math.min(session.planned_duration_seconds, session.active_duration_seconds +
+      (playing && localStart.current !== null ? Math.floor((now - localStart.current) / 1000) : 0))
+    : 0;
+  const remaining = session ? Math.max(0, session.planned_duration_seconds - activeSeconds) : selectedDuration;
+  const completionPercent = session ? Math.min(100, activeSeconds / session.planned_duration_seconds * 100) : 0;
+  const phase = (() => {
+    let end = 0;
+    for (const item of currentPhases) {
+      end += item.duration_seconds;
+      if (activeSeconds < end) return item;
+    }
+    return currentPhases[currentPhases.length - 1] ?? null;
+  })();
+
+  const back = () => {
+    if (onBack) onBack();
+    else onTabChange?.('sadhana');
   };
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
+  if (signedIn === null || loading) {
+    return <main className="mx-auto min-h-screen max-w-md bg-[#0b0b09] px-6 pt-16 text-center text-[#b5a98a]" role="status">Preparing your Meditation space…</main>;
+  }
+  if (!signedIn) {
+    return <main className="mx-auto min-h-screen max-w-md bg-[#0b0b09] px-6 pt-16 text-center text-[#b5a98a]" role="status">Please sign in to use Meditation.</main>;
+  }
 
   return (
-    <main className="relative h-screen w-full flex flex-col bg-[#0a0a0a] text-white font-sans overflow-hidden select-none max-w-md mx-auto">
-      {/* Background Image Container */}
-      <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-1000"
-        style={{
-          backgroundImage: `linear-gradient(to bottom, rgba(10, 10, 10, 0.4), rgba(10, 10, 10, 0.9)), url('https://lh3.googleusercontent.com/aida-public/AB6AXuCkgtMTRpmVEm_A9G2CVOxgHiZO842QnTXrGJ0FEjBiukTUr5dzEUaxoAJAXLIY2DhhP3sC6w0cj2HogA1DZ_Qfa-kH11qjxN3y_Syvt-hDJVzk1GSAnkIc3G6ZZeW95O7CC36XjGY8PerrOrWZmW1WahKLA3JG5gazqhFyuALxLONu2Rxg1dsP3yXrd20fE_Po5hfI-ltkJhFPoxdBWjqXIy5WFnpCkDLyLK91ZME25uTo7nkjfJCBwV400UCbnb069qiHpb4tE9k')`,
-        }}
-      />
-
-      {/* Toast Notification */}
-      {toastMsg && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-[#d4a85f] text-[#0a0a0a] font-bold text-xs px-4 py-2 rounded-full shadow-2xl animate-bounce">
-          {toastMsg}
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 pt-12 pb-4 z-10">
-        <button
-          onClick={handleGoBack}
-          aria-label="Go back"
-          className="text-[#d4a85f] hover:scale-110 active:scale-95 transition-transform p-1"
-        >
-          <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-          </svg>
-        </button>
+    <main className="mx-auto min-h-screen max-w-md bg-[radial-gradient(ellipse_at_top,#292114_0%,#11100d_42%,#090909_100%)] px-5 pb-12 pt-10 text-[#e5e2e1]">
+      <header className="mb-6 flex items-center justify-between">
+        <button onClick={() => { if (mode === 'session') void leaveSession(); else back(); }} aria-label="Go back" className="rounded-full border border-[#d4af37]/25 px-3 py-2 text-[#d4af37]">‹ Back</button>
         <div className="text-center">
-          <h1 className="font-serif text-2xl tracking-wide text-[#d4a85f] font-medium">
-            Meditation
-          </h1>
-          <p className="text-xs uppercase tracking-widest text-gray-300 opacity-80">
-            Find inner peace
-          </p>
+          <h1 className="font-serif text-xl tracking-wide text-[#d4af37]">Meditation</h1>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#b5a98a]">{mode === 'history' ? 'Your journey' : 'A quiet moment for you'}</p>
         </div>
-        <button
-          onClick={() => showToast('Settings: Sacred Om Ambient Active')}
-          aria-label="Settings"
-          className="text-[#d4a85f] hover:scale-110 active:scale-95 transition-transform p-1"
-        >
-          <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.5"
-            />
-            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-          </svg>
-        </button>
+        <button onClick={() => setMode(mode === 'history' ? 'library' : 'history')} className="rounded-full border border-[#d4af37]/20 px-3 py-2 text-xs text-[#e5d6b7]">{mode === 'history' ? 'Library' : 'History'}</button>
       </header>
 
-      {/* Spacer */}
-      <div className="flex-grow flex items-center justify-center relative">
-        {isPlaying && (
-          <div
-            className={`w-48 h-48 rounded-full border-2 border-[#d4a85f]/30 flex items-center justify-center transition-all duration-1000 ${
-              breathPhase === 'In'
-                ? 'scale-125 bg-[#d4a85f]/20 blur-md'
-                : breathPhase === 'Hold'
-                ? 'scale-125 bg-[#d4a85f]/30 blur-sm'
-                : 'scale-90 bg-[#d4a85f]/10 blur-md'
-            }`}
-          />
-        )}
-      </div>
+      {error && <div role="alert" className="mb-4 rounded-xl border border-red-800 bg-red-950/40 p-3 text-sm text-red-200">{error}</div>}
+      {notice && <div role="status" className="mb-4 rounded-xl border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">{notice}</div>}
 
-      {/* Content Area */}
-      <section className="px-8 pb-10 flex flex-col items-center text-center z-10">
-        {/* Session Title */}
-        <div className="mb-8">
-          <h2 className="font-serif text-4xl text-[#d4a85f] leading-tight whitespace-pre-line font-normal drop-shadow-lg">
-            {breathText}
-          </h2>
-          <p className="mt-3 text-sm tracking-widest text-gray-300 font-sans">
-            {isPlaying ? (
-              <span className="text-[#d4a85f] font-bold text-lg">{formatTime(timeLeft)} remaining</span>
-            ) : (
-              `${selectedDuration} Min • Guided Meditation`
-            )}
-          </p>
-        </div>
+      {mode === 'history' && (
+        <section className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4"><p className="text-xs text-[#b5a98a]">Current streak</p><p className="mt-1 text-2xl text-[#d4af37]">{history?.progress?.current_streak ?? 0} days</p></div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4"><p className="text-xs text-[#b5a98a]">Total meditation</p><p className="mt-1 text-2xl text-[#d4af37]">{history?.progress?.total_meditation_minutes ?? 0} min</p></div>
+          </div>
+          <p className="text-sm text-[#d4af37]">Level {history?.progress?.level_number ?? 1} · {history?.progress?.level_name ?? 'Temple Entrance'} · {history?.progress?.current_xp ?? 0} XP</p>
+          <h2 className="font-serif text-lg text-[#f3d992]">Recent sessions</h2>
+          <div className="space-y-2">
+            {(history?.sessions ?? []).map(item => (
+              <article key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 p-3">
+                <div><p className="text-sm text-[#f3d992]">{item.status.replace('_', ' ')}</p><p className="text-xs text-[#b5a98a]">{formatDate(item.started_at)} · {Math.floor(item.active_duration_seconds / 60)} min</p></div>
+                {(item.status === 'paused' || item.status === 'in_progress') && item.practice_id && <button onClick={() => void resume(item)} className="rounded-lg bg-[#d4af37] px-3 py-1.5 text-xs font-semibold text-[#17130b]">Resume</button>}
+              </article>
+            ))}
+            {!history?.sessions.length && <p className="text-sm text-[#b5a98a]">Completed sessions will appear here.</p>}
+          </div>
+        </section>
+      )}
 
-        {/* Main CTA */}
-        <button
-          onClick={handleStartToggle}
-          style={{
-            background: 'linear-gradient(135deg, #8e6b3e 0%, #d4a85f 50%, #8e6b3e 100%)',
-            boxShadow: '0 4px 15px rgba(212, 168, 95, 0.3)',
-          }}
-          className="w-full max-w-xs py-4 rounded-full text-[#0a0a0a] font-cinzel font-bold text-lg tracking-widest transition-transform active:scale-95 mb-10"
-        >
-          {isPlaying ? 'Pause Meditation' : 'Start Meditation'}
-        </button>
+      {mode === 'library' && (
+        <section className="space-y-4">
+          {!!library?.stages.length && <section className="space-y-3">
+            <h2 className="font-serif text-lg text-[#f3d992]">Your meditation journey</h2>
+            {library.stages.map(stage => {
+              const stagePractices = library.stage_practices
+                .filter(item => item.stage_id === stage.id)
+                .sort((left, right) => left.display_order - right.display_order)
+                .map(item => library.practices.find(practice => practice.id === item.practice_id))
+                .filter((practice): practice is SadhanaPractice => Boolean(practice));
+              return <article key={stage.id} className="rounded-xl border border-[#d4af37]/20 bg-black/20 p-4">
+                <p className="text-[10px] uppercase tracking-widest text-[#a18a67]">Stage {stage.stage_number} · {stage.recommended_duration_minutes} min daily</p>
+                <h3 className="mt-1 font-serif text-base text-[#f3d992]">{stage.name}</h3>
+                <p className="mt-1 text-xs text-[#b5a98a]">{stage.description}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {stagePractices.map(practice => <button key={practice.id} onClick={() => {
+                    setSelectedId(practice.id);
+                    setSelectedDuration(practice.default_duration_seconds ?? 600);
+                    setMode('session');
+                    setPlaying(false);
+                    setCurrentSession(null);
+                  }} className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#e5d6b7]">{practice.name}</button>)}
+                </div>
+              </article>;
+            })}
+          </section>}
+          {library?.recommendations.length ? <p className="rounded-xl border border-[#d4af37]/25 bg-[#d4af37]/10 p-3 text-sm text-[#f3d992]">Recommended for today</p> : null}
+          <div className="space-y-3">
+            {(library?.practices ?? []).map(practice => {
+              const isRecommended = library?.recommendations.some(item => item.practice_id === practice.id);
+              const category = library?.categories.find(item => item.id === practice.meditation_category_id);
+              return (
+                <button key={practice.id} onClick={() => { setSelectedId(practice.id); const preferred = history?.preferences?.preferred_duration_seconds; setSelectedDuration(preferred && practice.available_durations_seconds?.includes(preferred) ? preferred : practice.default_duration_seconds ?? 600); setMode('session'); setPlaying(false); setCurrentSession(null); }}
+                  className="w-full overflow-hidden rounded-2xl border border-[#d4af37]/20 bg-[#17140f] text-left">
+                  {isSafePlayableUrl(practice.cover_image_url) && <img src={practice.cover_image_url!} alt="" className="h-36 w-full object-cover" loading="lazy" />}
+                  <div className="p-4">
+                    <p className="text-[10px] uppercase tracking-widest text-[#a18a67]">{category?.name ?? 'Meditation'}{isRecommended ? ' · Today’s practice' : ''}</p>
+                    <h2 className="mt-1 font-serif text-lg text-[#f3d992]">{practice.name}</h2>
+                    <p className="mt-1 line-clamp-2 text-sm text-[#b5a98a]">{practice.subtitle || practice.description}</p>
+                    <p className="mt-3 text-xs text-[#d4af37]">{(practice.meditation_type ?? 'guided').replace(/_/g, ' ')} · {Math.round((practice.default_duration_seconds ?? 600) / 60)} min</p>
+                  </div>
+                </button>
+              );
+            })}
+            {!library?.practices.length && <p className="rounded-xl border border-white/10 p-5 text-sm text-[#b5a98a]">No published meditations are available yet.</p>}
+          </div>
+        </section>
+      )}
 
-        {/* Secondary Controls */}
-        <div className="grid grid-cols-4 gap-6 w-full max-w-sm mb-12">
-          {/* Music */}
-          <button
-            onClick={() => {
-              setIsMusicActive(!isMusicActive);
-              showToast(!isMusicActive ? 'Sacred Flute Music On 🎵' : 'Music Muted');
-            }}
-            className="flex flex-col items-center space-y-2 group"
-          >
-            <div
-              className={`w-14 h-14 rounded-full border border-[#d4a85f]/40 flex items-center justify-center text-[#d4a85f] transition-all ${
-                isMusicActive ? 'bg-[#d4a85f]/30 border-[#d4a85f] scale-105' : 'hover:bg-[#d4a85f]/10'
-              }`}
-            >
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                />
-              </svg>
+      {mode === 'session' && selectedPractice && (
+        <section className="space-y-5">
+          {isSafePlayableUrl(selectedPractice.cover_image_url) && <img src={selectedPractice.cover_image_url!} alt="" className="h-40 w-full rounded-2xl object-cover" />}
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[#a18a67]">{(selectedPractice.meditation_type ?? 'guided').replace(/_/g, ' ')}</p>
+            <h2 className="mt-1 font-serif text-2xl text-[#f3d992]">{selectedTranslation?.title || selectedPractice.name}</h2>
+            <p className="mt-2 text-sm text-[#b5a98a]">{selectedTranslation?.subtitle || selectedPractice.subtitle || selectedPractice.description}</p>
+          </div>
+
+          {!session && <div className="space-y-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+            <label className="block text-xs text-[#b5a98a]">Session duration
+              <select className="mt-2 w-full rounded-lg border border-white/10 bg-[#15130f] p-3 text-sm text-[#f3d992]" value={selectedDuration} onChange={event => setSelectedDuration(Number(event.target.value))}>
+                {durations.map(value => <option key={value} value={value}>{Math.round(value / 60)} minutes</option>)}
+              </select>
+            </label>
+            <div className="flex flex-wrap gap-4 text-xs text-[#b5a98a]">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={audioEnabled} onChange={event => setAudioEnabled(event.target.checked)} />Ambient audio</label>
+              {selectedPractice.has_bell !== false && <label className="flex items-center gap-2"><input type="checkbox" checked={bellEnabled} onChange={event => setBellEnabled(event.target.checked)} />Temple bell</label>}
             </div>
-            <span className="text-[10px] uppercase tracking-widest text-[#d4a85f]/80 font-medium">Music</span>
-          </button>
-
-          {/* Bell */}
-          <button
-            onClick={() => {
-              playBellSound();
-              setIsBellActive(!isBellActive);
-            }}
-            className="flex flex-col items-center space-y-2 group"
-          >
-            <div
-              className={`w-14 h-14 rounded-full border border-[#d4a85f]/40 flex items-center justify-center text-[#d4a85f] transition-all ${
-                isBellActive ? 'bg-[#d4a85f]/20 border-[#d4a85f]' : 'hover:bg-[#d4a85f]/10'
-              }`}
-            >
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                />
-              </svg>
+            <div className="flex gap-2">
+              <button onClick={() => void savePreferences()} className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm text-[#d9c99f]">Save preferences</button>
+              <button disabled={selectedPractice.requires_audio && !selectedPractice.allow_silent_mode && !guidedAudio && !selectedPractice.guided_audio_url} onClick={() => void start()} className="flex-1 rounded-xl bg-[#d4af37] px-4 py-3 font-semibold text-[#17130b] disabled:cursor-not-allowed disabled:opacity-50">Begin meditation</button>
             </div>
-            <span className="text-[10px] uppercase tracking-widest text-[#d4a85f]/80 font-medium">Bell</span>
-          </button>
+          </div>}
 
-          {/* Timer */}
-          <button
-            onClick={handleTimerChange}
-            className="flex flex-col items-center space-y-2 group"
-          >
-            <div className="w-14 h-14 rounded-full border border-[#d4a85f]/40 flex items-center justify-center text-[#d4a85f] hover:bg-[#d4a85f]/10 transition-all">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                />
-              </svg>
-            </div>
-            <span className="text-[10px] uppercase tracking-widest text-[#d4a85f]/80 font-medium">
-              {selectedDuration}m
-            </span>
-          </button>
-
-          {/* Ambient */}
-          <button
-            onClick={() => {
-              setIsAmbientActive(!isAmbientActive);
-              showToast(!isAmbientActive ? 'Tanpura Drone Sound On 🕉️' : 'Ambient Off');
-            }}
-            className="flex flex-col items-center space-y-2 group"
-          >
-            <div
-              className={`w-14 h-14 rounded-full border border-[#d4a85f]/40 flex items-center justify-center text-[#d4a85f] transition-all ${
-                isAmbientActive ? 'bg-[#d4a85f]/30 border-[#d4a85f] scale-105' : 'hover:bg-[#d4a85f]/10'
-              }`}
-            >
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                />
-              </svg>
-            </div>
-            <span className="text-[10px] uppercase tracking-widest text-[#d4a85f]/80 font-medium">Ambient</span>
-          </button>
-        </div>
-      </section>
-
-      {/* Bottom Navigation */}
-      <nav className="bg-black/80 backdrop-blur-md border-t border-white/10 pb-8 pt-4 px-4 z-20">
-        <div className="flex items-end justify-between max-w-lg mx-auto">
-          {/* Home */}
-          <button
-            onClick={() => onTabChange?.('home')}
-            className="flex flex-col items-center space-y-1 w-1/5 group"
-          >
-            <svg
-              className="h-6 w-6 text-gray-500 group-hover:text-[#d4a85f] transition-colors"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <span className="font-cinzel text-[10px] text-gray-500 group-hover:text-[#d4a85f] uppercase tracking-wider">
-              Home
-            </span>
-          </button>
-
-          {/* Library */}
-          <button
-            onClick={() => onTabChange?.('geeta')}
-            className="flex flex-col items-center space-y-1 w-1/5 group"
-          >
-            <svg
-              className="h-6 w-6 text-gray-500 group-hover:text-[#d4a85f] transition-colors"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <span className="font-cinzel text-[10px] text-gray-500 group-hover:text-[#d4a85f] uppercase tracking-wider">
-              Library
-            </span>
-          </button>
-
-          {/* Sadhana (Prominent Center Item) */}
-          <button
-            onClick={() => onTabChange?.('sadhana')}
-            className="flex flex-col items-center -mt-8 relative w-1/5 group"
-          >
-            <div className="relative">
-              <div className="absolute inset-0 bg-[#d4a85f]/20 blur-xl rounded-full" />
-              <div
-                className="relative w-16 h-16 rounded-full border-2 border-[#d4a85f] bg-[#0a0a0a] flex items-center justify-center overflow-hidden"
-                style={{ boxShadow: '0 0 20px rgba(212, 168, 95, 0.4)' }}
-              >
-                <img
-                  alt="Sadhana"
-                  className="w-10 h-10 object-contain"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwqgjzmiw4b8a3vYYCK2jpIPCqBsWkAolPporvEv8TdeBNQYpRlHlX3wMRqvfmRCDiN7RojiiJ0ZaY6W4dGykPLdnUxy8EZjBsIGyvnRytSi5qFcaDD8cecJNEdjZrj2gcFlPVDD-2lu3R9KxzGnKPrgSuvsopFJao5pH4jLvxaS__zDszATw6GOVTa5BKEJy9lmrNncFOX3MA_isUU-0PxglyuL36N8Rtx1JfWAk3loneIZ1EjHpWUbjlkauMBetpNDWAs2qNMkw"
-                />
+          {session && <>
+            <div className="flex flex-col items-center rounded-2xl border border-[#d4af37]/20 bg-black/20 p-6">
+              <div className={`mb-5 grid h-36 w-36 place-items-center rounded-full border border-[#d4af37]/40 text-center ${playing ? 'animate-pulse bg-[#d4af37]/10' : 'bg-transparent'}`}>
+                <div><p className="font-serif text-3xl text-[#f3d992]">{formatTime(remaining)}</p><p className="mt-1 text-[10px] uppercase tracking-widest text-[#b5a98a]">remaining</p></div>
+              </div>
+              <p className="text-center font-serif text-lg text-[#f3d992]">{phase?.title || (playing ? 'Rest in stillness' : 'Ready when you are')}</p>
+              <p className="mt-2 text-center text-sm leading-relaxed text-[#b5a98a]">{selectedTranslation?.guided_script || selectedTranslation?.instructions || phase?.instructions || selectedPractice.instructions}</p>
+              <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/10"><div className="h-full bg-[#d4af37] transition-all" style={{ width: `${completionPercent}%` }} /></div>
+              <div className="mt-5 flex w-full gap-2">
+                {playing ? <button onClick={() => void performAction('pause')} className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm">Pause</button> : session.status === 'paused' ? <button onClick={() => void performAction('resume')} className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm">Resume</button> : null}
+                {!playing && completionPercent >= 80 && session.status === 'in_progress' && <button onClick={() => { completionRequested.current = true; void performAction('complete'); }} className="flex-1 rounded-xl bg-[#d4af37] px-4 py-3 text-sm font-semibold text-[#17130b]">Complete</button>}
+                {session.status !== 'completed' && <button onClick={() => void performAction('abandon')} className="rounded-xl border border-red-900/50 px-3 py-3 text-xs text-red-200">End</button>}
               </div>
             </div>
-            <span className="font-cinzel text-[10px] text-[#d4a85f] uppercase tracking-widest mt-2 font-bold">
-              Sadhana
-            </span>
-          </button>
 
-          {/* Explore */}
-          <button
-            onClick={() => onTabChange?.('explore')}
-            className="flex flex-col items-center space-y-1 w-1/5 group"
-          >
-            <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center border border-[#d4a85f]/40 group-hover:border-[#d4a85f] group-hover:scale-110 transition-all">
-              <img
-                src="/golden_lotus.jpg"
-                alt="Explore"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <span className="font-cinzel text-[10px] text-gray-500 group-hover:text-[#d4a85f] uppercase tracking-wider">
-              Explore
-            </span>
-          </button>
+            {guidedAudio && isSafePlayableUrl(guidedAudio.public_url) && <audio controls preload="none" className="w-full" src={guidedAudio.public_url} />}
+            {ambientAudio && audioEnabled && isSafePlayableUrl(ambientAudio.public_url) && <audio controls loop preload="none" className="w-full" src={ambientAudio.public_url} />}
+            {selectedPractice.requires_audio && !guidedAudio && !selectedPractice.guided_audio_url && <p role="status" className="text-xs text-amber-200">Guided audio is not currently published. Continue in silent mode if available.</p>}
+            {!guidedAudio && isSafePlayableUrl(selectedPractice.guided_audio_url) && <audio controls preload="none" className="w-full" src={selectedPractice.guided_audio_url!} />}
+          </>}
 
-          {/* Profile */}
-          <button
-            onClick={() => onTabChange?.('achievements')}
-            className="flex flex-col items-center space-y-1 w-1/5 group"
-          >
-            <svg
-              className="h-6 w-6 text-gray-500 group-hover:text-[#d4a85f] transition-colors"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <span className="font-cinzel text-[10px] text-gray-500 group-hover:text-[#d4a85f] uppercase tracking-wider">
-              Profile
-            </span>
-          </button>
-        </div>
-      </nav>
+          {session?.status === 'completed' && (
+            <form onSubmit={saveReflection} className="space-y-3 rounded-2xl border border-[#d4af37]/20 bg-black/20 p-4">
+              <h3 className="font-serif text-lg text-[#f3d992]">A moment to reflect</h3>
+              <label className="block text-xs text-[#b5a98a]">How do you feel?
+                <select className="mt-1 w-full rounded-lg border border-white/10 bg-[#15130f] p-2 text-[#f3d992]" value={mood ?? ''} onChange={event => setMood(event.target.value || null)}>
+                  <option value="">Choose if you wish</option>{['peaceful', 'relaxed', 'focused', 'restless', 'neutral'].map(item => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <textarea maxLength={2000} rows={3} className="w-full rounded-lg border border-white/10 bg-[#15130f] p-3 text-sm" placeholder="Private reflection (optional)" value={reflection} onChange={event => setReflection(event.target.value)} />
+              <input maxLength={1000} className="w-full rounded-lg border border-white/10 bg-[#15130f] p-3 text-sm" placeholder="An intention for the day (optional)" value={intention} onChange={event => setIntention(event.target.value)} />
+              <button disabled={savingReflection} className="w-full rounded-xl bg-[#d4af37] px-4 py-3 font-semibold text-[#17130b]">{savingReflection ? 'Saving…' : 'Save reflection'}</button>
+            </form>
+          )}
+        </section>
+      )}
     </main>
   );
 };

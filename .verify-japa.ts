@@ -1,0 +1,11 @@
+﻿import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
+import { createPracticeChantCatalogue, practiceChantContent } from './src/lib/practiceChantCatalog';
+dotenv.config({path:['.env.local','.env'],quiet:true});
+const url=process.env.VITE_SUPABASE_URL,key=process.env.VITE_SUPABASE_ANON_KEY;
+if(!url||!key)throw Error('Public Supabase configuration unavailable');
+const catalogue=createPracticeChantCatalogue(createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}}));
+const rows=await catalogue.list();
+const record=rows.find(row=>row.id==='d372156c-e861-47cb-bc94-3a55849efeb2');
+console.log(JSON.stringify({count:rows.length,confirmedRecordLoaded:!!record,category:record?.category,targetCount:record?.target_count,durationMinutes:record?.duration_minutes,localizedLanguages:record?['en','hi','kn','ml','ta','te'].filter(language=>practiceChantContent(record,language).meaningIsLocalized):[]}));
+if(!record)process.exitCode=1;

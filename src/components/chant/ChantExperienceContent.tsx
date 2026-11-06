@@ -15,6 +15,7 @@ import {
 import { getPracticeTarget } from '../../services/sadhana/practiceCatalog';
 import { usePracticeChants } from './usePracticeChants';
 import { ChantCounter } from './ChantCounter';
+import { JapaMalaVisualization } from '../sadhana/JapaMalaVisualization';
 import { ChantArtwork } from './ChantArtwork';
 import { ChantAudio } from './ChantAudio';
 import { ChantTranslationContent } from './ChantTranslationContent';
@@ -133,6 +134,7 @@ export function ChantExperienceContent({onClose,onComplete,preferredLanguage='en
    {practiceCounter?.enabled&&practiceStarted&&<section className="chant-practice">
     <span className="chant-eyebrow">{practiceCompleted?'PRACTICE COMPLETE':'ONE REPETITION. ONE MOMENT OF PRESENCE.'}</span>
     <button className="chant-counter" disabled={practiceCompleted} onClick={()=>setPracticeCount(count=>count+1)} aria-label={`Count one repetition. Current count ${practiceCount}`}>
+     <JapaMalaVisualization count={practiceCount} target={practiceCounter.target || 108} active={!practiceCompleted}/>
      <span>{practiceCount}</span><small>{practiceCounter.target?`OF ${practiceCounter.target} · TAP TO COUNT`:'TAP TO COUNT'}</small>
     </button>
     {practiceCounter.malaEnabled&&<p>{Math.floor(practiceCount/108)} malas · {practiceCount%108} repetitions</p>}

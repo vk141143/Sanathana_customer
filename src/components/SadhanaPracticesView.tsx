@@ -3,6 +3,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { NavTab, ReadingProgress } from '../types';
 import { ScriptureReader } from './ScriptureReader';
+import { MeditationView } from './MeditationView';
+import { SadhanaPracticeCard } from './sadhana/SadhanaPracticeCard';
+import { JapaMalaVisualization } from './sadhana/JapaMalaVisualization';
 import { resolvePracticeReading, type PracticeReading } from '../services/sadhana/practiceReading';
 import {
   fetchActiveSadhanaPractices,
@@ -19,6 +22,10 @@ import {
 } from '../services/sadhana/practiceCatalog';
 
 interface SadhanaPracticesViewProps {
+  dashboardIntro?: React.ReactNode;
+  onPracticeReturn?: () => void;
+  onOpenJournal?: () => void;
+  onOpenSavedJapa?: () => void;
   onTabChange: (tab: NavTab) => void;
   onBack: () => void;
   preferredLanguage?: string;
@@ -53,6 +60,7 @@ function scriptureVerseRange(start: unknown, end: unknown): string | null {
 }
 
 export const SadhanaPracticesView: React.FC<SadhanaPracticesViewProps> = ({
+  dashboardIntro, onPracticeReturn, onOpenJournal, onOpenSavedJapa,
   onTabChange,
   onBack,
   preferredLanguage = 'en',
@@ -61,17 +69,34 @@ export const SadhanaPracticesView: React.FC<SadhanaPracticesViewProps> = ({
   onToggleBookmark,
 }) => {
   const [practices, setPractices] = useState<SadhanaPractice[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(window.history.state?.sadhanaPractice ?? null);
+  const [sessionStates, setSessionStates] = useState<Record<string, PracticeRuntimeState>>({});
+  const hasEntered = React.useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryNumber, setRetryNumber] = useState(0);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, user => {
-    setSelectedId(null);
+    setSessionStates({});
     setPractices([]);
     setSignedIn(!!user);
   }), []);
+
+  useEffect(() => {
+    const back = () => { setSelectedId(window.history.state?.sadhanaPractice ?? null); onPracticeReturn?.(); };
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, [onPracticeReturn]);
+  const openPractice = (id: string) => {
+    hasEntered.current = true;
+    window.history.pushState({ ...window.history.state, tab: 'sadhana', sadhanaPractice: id }, '', '#sadhana');
+    setSelectedId(id); window.scrollTo(0, 0);
+  };
+  const returnToPractices = () => {
+    if (window.history.state?.sadhanaPractice) window.history.back();
+    else { setSelectedId(null); onPracticeReturn?.(); }
+  };
 
   useEffect(() => {
     let current = true;
@@ -96,24 +121,41 @@ export const SadhanaPracticesView: React.FC<SadhanaPracticesViewProps> = ({
     [practices, selectedId],
   );
 
+  if (selectedPractice?.category === 'meditation') {
+    return (
+      <MeditationView
+        initialPractice={selectedPractice}
+        preferredLanguage={preferredLanguage}
+        onBack={returnToPractices}
+        onTabChange={onTabChange}
+      />
+    );
+  }
+
   if (selectedPractice) {
     return (
       <PracticeSession
         key={selectedPractice.id}
         practice={selectedPractice}
+        onOpenJournal={onOpenJournal}
+        onOpenSavedJapa={onOpenSavedJapa}
+        mantraOptions={practices.filter(item => item.category === selectedPractice.category)}
+        onSelectMantra={openPractice}
+        onRuntimeChange={runtime => setSessionStates(current => ({ ...current, [selectedPractice.id]: runtime }))}
         onReadingProgressChange={onReadingProgressChange}
         bookmarks={bookmarks} onToggleBookmark={onToggleBookmark}
         preferredLanguage={preferredLanguage}
-        onBack={() => setSelectedId(null)}
+        onBack={returnToPractices}
         onTabChange={onTabChange}
       />
     );
   }
 
   return (
-    <main className="min-h-screen max-w-md mx-auto px-5 pt-14 pb-32 text-[#e5e2e1]"
-      style={{ background: 'linear-gradient(180deg, #0d0b08 0%, #131008 50%, #0a0a0a 100%)' }}>
-      <header className="flex items-center gap-3 mb-6">
+    <main data-returning={hasEntered.current} className={`sadhana-page ${dashboardIntro ? 'sadhana-dashboard' : 'sadhana-inner-page'}`}>
+      {dashboardIntro}
+      <div className="sadhana-catalogue">
+      {dashboardIntro ? <div className="sadhana-section-title"><div><span className="sadhana-eyebrow">NOURISH YOUR INNER WORLD</span><h2>Today's Sadhana</h2></div><span>{practices.length ? `${practices.length} practices` : ''}</span></div> : <header className="flex items-center gap-3 mb-6">
         <button onClick={onBack} aria-label="Back to Sadhana tracker"
           className="w-9 h-9 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.2)' }}>
@@ -126,7 +168,7 @@ export const SadhanaPracticesView: React.FC<SadhanaPracticesViewProps> = ({
           </h1>
           <p className="text-xs" style={{ color: '#B5A98A' }}>Practices curated for your journey</p>
         </div>
-      </header>
+      </header>}
 
       {loading && <p role="status" className="py-10 text-center text-sm text-[#B5A98A]">Loading practices…</p>}
       {!loading && error && (
@@ -145,46 +187,23 @@ export const SadhanaPracticesView: React.FC<SadhanaPracticesViewProps> = ({
       )}
       {!loading && !error && practices.length > 0 && (
         <div className="flex flex-col gap-3">
-          {practices.map(practice => (
-            <button key={practice.id} onClick={() => setSelectedId(practice.id)}
-              className="w-full text-left rounded-2xl overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, #1a1710 0%, #111008 100%)', border: '1px solid rgba(212,175,55,0.2)' }}>
-              {isSafePlayableUrl(practice.cover_image_url) && (
-                <img src={practice.cover_image_url} alt="" className="w-full h-36 object-cover" loading="lazy" />
-              )}
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    {practice.is_featured && <span className="text-[10px] uppercase tracking-widest text-[#EAB351]">Featured · </span>}
-                    <span className="text-[10px] uppercase tracking-widest text-[#A18A67]">
-                      {CATEGORY_LABELS[practice.category]}
-                    </span>
-                    <h2 className="font-cinzel font-bold mt-1 text-[#F3D992]">{practice.name}</h2>
-                  </div>
-                  <svg className="mt-1 shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="#EAB351" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m9 18 6-6-6-6" />
-                  </svg>
-                </div>
-                {practice.subtitle && <p className="mt-1 text-sm text-[#B5A98A]">{practice.subtitle}</p>}
-                {practice.description && <p className="mt-2 text-xs leading-relaxed text-[#9b8d71] line-clamp-3">{practice.description}</p>}
-                <PracticeTargetSummary practice={practice} />
-              </div>
-            </button>
-          ))}
+          {practices.map((practice, index) => <SadhanaPracticeCard key={practice.id} practice={practice} index={index} runtime={sessionStates[practice.id]} onOpen={() => openPractice(practice.id)}/>)}
+          {/* The catalogue and all practice identifiers remain database-driven. */}
+
         </div>
       )}
+      <p className="sadhana-closing">Return to yourself, one practice at a time.</p>
+      </div>
     </main>
   );
 };
 
-const PracticeTargetSummary: React.FC<{ practice: SadhanaPractice }> = ({ practice }) => {
-  const target = getPracticeTarget(practice);
-  if (!target) return null;
-  return <p className="mt-3 text-xs text-[#EAB351]">Target: {target.value} {target.unit}</p>;
-};
-
 interface PracticeSessionProps {
+  mantraOptions?: SadhanaPractice[];
+  onSelectMantra?: (id: string) => void;
+  onOpenJournal?: () => void;
+  onOpenSavedJapa?: () => void;
+  onRuntimeChange?: (runtime: PracticeRuntimeState) => void;
   practice: SadhanaPractice;
   preferredLanguage: string;
   bookmarks?: string[];
@@ -195,6 +214,8 @@ interface PracticeSessionProps {
 }
 
 const PracticeSession: React.FC<PracticeSessionProps> = ({
+  mantraOptions, onSelectMantra,
+  onOpenJournal, onOpenSavedJapa, onRuntimeChange,
   practice,
   preferredLanguage,
   onReadingProgressChange,
@@ -214,6 +235,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
   const [readingAttempt, setReadingAttempt] = useState(0);
   const [readerOpen, setReaderOpen] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [japaStarted, setJapaStarted] = useState(false);
   const target = getPracticeTarget(practice);
   const completionRule = practice.completion_rule ?? 'manual';
   const repetitionTarget = getRepetitionTarget(practice);
@@ -227,6 +249,10 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
   const canCountRepetitions = isCounterEnabled(practice) ||
     (practice.category === 'mantra' && practice.practice_mode === 'repetition' && practice.target_type === 'repetitions');
   const canWriteReflection = practice.category_config.allow_personal_reflection !== false;
+  // Keep a visual summary for this visit, without claiming it is a persisted session.
+  const runtimeListener = React.useRef(onRuntimeChange);
+  runtimeListener.current = onRuntimeChange;
+  useEffect(() => { runtimeListener.current?.(runtime); }, [runtime]);
 
   useEffect(() => {
     if (!timerRunning) return;
@@ -284,7 +310,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
   </>;
 
   return (
-    <main className="min-h-screen max-w-md mx-auto px-5 pt-14 pb-32 text-[#e5e2e1]"
+    <main className="sadhana-page sadhana-inner-page sadhana-session min-h-screen max-w-md mx-auto px-5 pt-14 pb-32 text-[#e5e2e1]"
       style={{ background: 'linear-gradient(180deg, #0d0b08 0%, #131008 50%, #0a0a0a 100%)' }}>
       <header className="flex items-center gap-3 mb-6">
         <button onClick={onBack} aria-label="Back to practices"
@@ -298,6 +324,8 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
           <h1 className="font-cinzel text-lg font-bold text-[#D4AF37]">{practice.name}</h1>
         </div>
       </header>
+
+      {(practice.category === 'japa' || practice.category === 'mantra') && !!mantraOptions?.length && <label className="sadhana-mantra-select">Selected mantra<select value={practice.id} onChange={event => onSelectMantra?.(event.target.value)}>{mantraOptions.map(item => <option key={item.id} value={item.id}>{getPracticePresentation(item, preferredLanguage).mantraName || item.name}</option>)}</select></label>}
 
       {isSafePlayableUrl(practice.cover_image_url) && (
         <img src={practice.cover_image_url} alt="" className="w-full max-h-56 rounded-2xl object-cover mb-5" />
@@ -385,11 +413,13 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
 
       {canCountRepetitions && (
         <section className="rounded-2xl p-4 mb-4 text-center" style={{ background: '#17130c', border: '1px solid rgba(212,175,55,0.16)' }}>
+          <JapaMalaVisualization count={runtime.repetitions} target={repetitionTarget ?? 108} active={japaStarted && !completed}/>
+          {!japaStarted && <button className="sadhana-primary" onClick={() => setJapaStarted(true)}>{runtime.repetitions ? 'Continue Japa' : 'Start Japa'}</button>}
           <p className="text-xs uppercase tracking-widest text-[#A18A67]">Completed repetitions</p>
           <p className="font-garamond text-4xl font-bold text-[#F3D992] my-2">{runtime.repetitions}</p>
           {repetitionTarget && <p className="mb-3 text-xs text-[#B5A98A]">Repetition target: {repetitionTarget}</p>}
           <button onClick={() => setRuntime(current => ({ ...current, repetitions: current.repetitions + 1 }))}
-            disabled={completed} className="rounded-full px-5 py-2 text-sm disabled:opacity-50"
+            disabled={completed || !japaStarted} className="rounded-full px-5 py-2 text-sm disabled:opacity-50"
             style={{ background: '#D4AF37', color: '#100e08' }}>Count one complete recitation</button>
           {isMalaCounterEnabled(practice) && (
             <div className="mt-3">
@@ -418,7 +448,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
       )}
 
       {practice.category === 'gratitude' && canWriteReflection && (
-        <section className="rounded-2xl p-4 mb-4" style={{ background: '#17130c', border: '1px solid rgba(212,175,55,0.16)' }}>
+        onOpenJournal ? <section className="sadhana-parchment"><h2>Today I am grateful for…</h2><p>A small blessing. A quiet moment. A reason to give thanks.</p><button className="sadhana-primary" onClick={onOpenJournal}>Open my gratitude journal</button></section> : <section className="rounded-2xl p-4 mb-4" style={{ background: '#17130c', border: '1px solid rgba(212,175,55,0.16)' }}>
           <h2 className="font-cinzel text-sm text-[#EAB351] mb-2">Your reflection</h2>
           <form onSubmit={addReflection}>
             <textarea value={reflection} onChange={event => setReflection(event.target.value)}
@@ -453,6 +483,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({
       <p className="mt-5 text-center text-xs leading-relaxed text-[#8d8067]">
         Session progress and reflections are not saved yet. Leaving this screen clears them.
       </p>
+      {practice.category === 'japa' && onOpenSavedJapa && <button className="sadhana-secondary" onClick={onOpenSavedJapa}>Open Japa library & saved sessions</button>}
     </main>
   );
 };

@@ -1,109 +1,51 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Feather, X, Check } from 'lucide-react';
 
 interface GratitudeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaveGratitude: (blessing: string) => void;
+  onSaveGratitude: (blessing: string) => void | Promise<void>;
+  entries?: Array<{date: string; blessing: string}>;
 }
-
-export const GratitudeModal: React.FC<GratitudeModalProps> = ({
-  isOpen,
-  onClose,
-  onSaveGratitude,
-}) => {
-  const [b1, setB1] = useState('');
-  const [b2, setB2] = useState('');
-  const [b3, setB3] = useState('');
-
+export const GratitudeModal: React.FC<GratitudeModalProps> = ({ isOpen, onClose, onSaveGratitude, entries = [] }) => {
+  const [text, setText] = useState(''), [saving, setSaving] = useState(false), [saved, setSaved] = useState(false), [error, setError] = useState('');
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    setSaved(false); setError('');
+    const focused = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog.current?.focus();
+    return () => { document.body.style.overflow = overflow; focused?.focus(); };
+  }, [isOpen]);
   if (!isOpen) return null;
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    const combined = [b1, b2, b3].filter(Boolean).join(' | ');
-    if (combined) {
-      onSaveGratitude(combined);
-    }
-    onClose();
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (saving || !text.trim() || text.length > 2000) return;
+    setSaving(true); setError('');
+    try { await onSaveGratitude(text.trim()); setText(''); setSaved(true); }
+    catch { setError('Your entry could not be saved. Your writing is still here; please retry.'); }
+    finally { setSaving(false); }
   };
-
-  return (
-    <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="glass-panel w-full max-w-md p-6 relative">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#f2c377] text-xl filled">
-              favorite
-            </span>
-            <h3 className="font-cinzel text-xl text-[#f2c377] font-bold">
-              Gratitude Journal
-            </h3>
-          </div>
-          <button onClick={onClose} className="text-[#d2c4b3] hover:text-[#f2c377]">
-            <span className="material-symbols-outlined text-2xl">close</span>
-          </button>
-        </div>
-
-        <p className="text-xs text-[#d2c4b3]/80 font-body-md mb-4 leading-relaxed">
-          Reflect on 3 blessings you received today. Gratitude opens the heart to divine grace.
-        </p>
-
-        <form onSubmit={handleSave} className="space-y-3">
-          <div>
-            <label className="block text-[10px] font-label-sm uppercase text-[#f2c377] mb-1">
-              Blessing 1
-            </label>
-            <input
-              type="text"
-              value={b1}
-              onChange={e => setB1(e.target.value)}
-              placeholder="e.g., Peace during morning pranayama"
-              className="w-full bg-[#1c1b1b] border border-[#4e4539]/40 rounded-xl px-3 py-2 text-xs text-[#e5e2e1] focus:border-[#f2c377] outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-label-sm uppercase text-[#f2c377] mb-1">
-              Blessing 2
-            </label>
-            <input
-              type="text"
-              value={b2}
-              onChange={e => setB2(e.target.value)}
-              placeholder="e.g., Guidance in Gita Chapter 2"
-              className="w-full bg-[#1c1b1b] border border-[#4e4539]/40 rounded-xl px-3 py-2 text-xs text-[#e5e2e1] focus:border-[#f2c377] outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-label-sm uppercase text-[#f2c377] mb-1">
-              Blessing 3
-            </label>
-            <input
-              type="text"
-              value={b3}
-              onChange={e => setB3(e.target.value)}
-              placeholder="e.g., Good health for family"
-              className="w-full bg-[#1c1b1b] border border-[#4e4539]/40 rounded-xl px-3 py-2 text-xs text-[#e5e2e1] focus:border-[#f2c377] outline-none"
-            />
-          </div>
-
-          <div className="pt-2 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-label-sm uppercase text-[#d2c4b3]/60"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="gold-button px-5 py-2 rounded-xl text-xs font-label-sm uppercase text-[#432c00] font-bold"
-            >
-              Save Blessings
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+  return <div className="sadhana-journal-overlay"><div className="sadhana-journal" ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="journal-title" onKeyDown={event => {
+    if (event.key === 'Escape' && !saving) onClose();
+    if (event.key === 'Tab') {
+      const focusable = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),textarea,summary') ?? []).filter(el => el.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  }}>
+    <header><div><span className="sadhana-eyebrow">A HEART OPEN TO GRACE</span><h2 id="journal-title">Gratitude Journal</h2></div><button aria-label="Close gratitude journal" disabled={saving} onClick={onClose}><X size={20}/></button></header>
+    <p>Pause. Notice the blessings in the ordinary. Let your heart find the words.</p>
+    <form onSubmit={save}>
+      <div className="sadhana-parchment"><label htmlFor="gratitude-entry"><Feather size={22} aria-hidden="true"/>Today I am grateful for…</label><textarea id="gratitude-entry" value={text} onChange={e => { setText(e.target.value); setSaved(false); }} maxLength={2000} required placeholder="The people, the moments, the little things…" aria-describedby="gratitude-count"/><span id="gratitude-count" className="sadhana-character-count">{text.length.toLocaleString()} / 2,000 characters</span></div>
+      {error && <p className="sadhana-notice" role="alert">{error}</p>}
+      {saved && <p className="sadhana-notice" role="status"><Check size={16} style={{display:'inline',marginRight:8}}/>Your reflection is saved in this device's journal.</p>}
+      <div className="sadhana-journal-actions"><button className="sadhana-primary" type="submit" disabled={saving || !text.trim()}>{saving ? 'Saving your reflection…' : 'Save my gratitude'}</button></div>
+    </form>
+    <details open={saved}><summary>My reflections · {entries.length}</summary>{entries.length ? [...entries].reverse().map((entry,index) => <article key={`${entry.date}-${index}`}><time>{entry.date}</time><p>{entry.blessing}</p></article>) : <p>Your first reflection is a beautiful place to begin.</p>}</details>
+    <p className="sadhana-footnote">Your journal uses this app's existing device storage.</p>
+  </div></div>;
 };

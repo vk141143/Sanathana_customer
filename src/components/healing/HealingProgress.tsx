@@ -14,71 +14,17 @@ export const HealingProgress: React.FC<Props> = ({
   currentStep,
   emotionName,
   emotionTagline,
-  bannerImageUrl,
   onBackToList,
 }) => {
   const progressPct = ((currentStep - 1) / (HEALING_STEPS.length - 1)) * 100;
 
   return (
     <>
-      {/* Banner */}
-      <div className="relative w-full h-72 overflow-hidden">
-        {bannerImageUrl && (
-          <img
-            src={bannerImageUrl}
-            alt={emotionName}
-            className="absolute inset-0 w-full h-full object-cover object-top opacity-85"
-          />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-[#120B08]" />
-
-        {/* Back arrow — top left */}
-        <button
-          onClick={onBackToList}
-          aria-label="Back to Emotions"
-          className="absolute top-5 left-5 z-20 flex items-center justify-center rounded-full transition-opacity active:scale-90"
-          style={{
-            width: 38,
-            height: 38,
-            background: 'rgba(18,11,8,0.65)',
-            backdropFilter: 'blur(8px)',
-            border: '1px solid rgba(233,180,76,0.35)',
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M12 3L6 9l6 6" stroke="#E9B44C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-
-        {/* ॐ symbol — top right, same line as back arrow */}
-        <div
-          className="absolute top-5 right-5 z-20 flex items-center justify-center rounded-full"
-          style={{
-            width: 38,
-            height: 38,
-            background: 'rgba(18,11,8,0.65)',
-            backdropFilter: 'blur(8px)',
-            border: '1px solid rgba(233,180,76,0.35)',
-          }}
-        >
-          <span
-            className="font-cinzel text-lg leading-none"
-            style={{ color: '#E9B44C', textShadow: '0 0 10px rgba(233,180,76,0.6)' }}
-          >
-            ॐ
-          </span>
-        </div>
-
-        {/* Title near bottom */}
-        <div className="absolute bottom-6 left-0 w-full px-5 z-10">
-          <h1 className="font-cinzel text-5xl font-bold text-[#FFD978] drop-shadow-lg leading-tight">
-            {emotionName}
-          </h1>
-          <p className="text-[#C9B9A2] text-sm font-label-sm uppercase tracking-widest mt-1">
-            {emotionTagline}
-          </p>
-        </div>
-      </div>
+      <header className="px-5 pt-5 pb-6">
+        <button onClick={onBackToList} aria-label="Back to Emotions" className="min-h-11 text-sm text-[#f2c377] mb-4">← Back to Emotions &amp; Healing</button>
+        <h1 className="font-cinzel text-3xl font-bold text-[#FFD978] break-words">{emotionName}</h1>
+        {emotionTagline && <p className="text-[#C9B9A2] text-base leading-relaxed mt-2 whitespace-pre-wrap">{emotionTagline}</p>}
+      </header>
 
       {/* Sticky Progress Bar — smaller nodes, centred */}
       <div

@@ -110,6 +110,7 @@ const NavItem: React.FC<NavItemProps> = ({
     type="button"
     onClick={onClick}
     aria-label={label}
+    aria-current={active ? 'page' : undefined}
     className={[
       'flex min-w-0 flex-1 flex-col items-center justify-center',
       'gap-[4px] border-0 bg-transparent',
@@ -268,7 +269,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 transition: 'color 250ms ease',
               }}
             >
-              Sadhana
+              Explore
             </span>
           </div>
         </div>

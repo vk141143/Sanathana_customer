@@ -59,7 +59,7 @@ export function createPracticeChantCatalogue(client:SupabaseClient) {
     // Explicit stable ranges avoid silently truncating at Supabase's row limit.
     for(let offset=0;;offset+=200){
       const {data,error}=await query().order('display_order',{ascending:true}).order('name',{ascending:true}).order('id',{ascending:true}).range(offset,offset+199);
-      if(error){console.warn('Chant practice catalogue failed',{operation:'active mantra/japa list',code:error.code});throw new Error('Unable to load mantra and Japa practices. Please retry.');}
+      if(error){console.warn('Chant practice catalogue failed',{operation:'active mantra/japa list',code:error.code,message:error.message,details:error.details,hint:error.hint});throw new Error('Unable to load mantra and Japa practices. Please retry.');}
       for(const row of data??[]){const practice=normalizeChantPractice(row);if(practice)records.push(practice);}
       if((data?.length??0)<200)break;
     }
@@ -74,7 +74,7 @@ export function createPracticeChantCatalogue(client:SupabaseClient) {
     async detail(id:string):Promise<ChantPractice> {
       if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw new Error('Invalid practice ID.');
       const {data,error}=await query().eq('id',id).maybeSingle();
-      if(error){console.warn('Chant practice detail failed',{operation:'active practice detail',code:error.code});throw new Error('Unable to load this practice. Please retry.');}
+      if(error){console.warn('Chant practice detail failed',{operation:'active practice detail',code:error.code,message:error.message,details:error.details,hint:error.hint});throw new Error('Unable to load this practice. Please retry.');}
       const practice=normalizeChantPractice(data);
       if(!practice)throw new Error('This mantra or Japa practice is no longer available.');
       return practice;

@@ -1,6 +1,8 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Bookmark, BookOpen, Grid2X2, Headphones, Languages, Leaf, ScrollText } from 'lucide-react';
 
+import { SacredScrollSurface } from './SacredScrollSurface';
+
 type View = 'sloka' | 'meaning' | 'explanation' | 'example' | 'listen';
 interface SacredScrollProps {
   verseLabel: string;
@@ -56,13 +58,9 @@ export function SacredScroll(props: SacredScrollProps) {
     <section className="sacred-reader" aria-label="Scripture manuscript">
       <div className="sacred-caption"><span aria-hidden="true">✦</span> Sacred wisdom <span aria-hidden="true">✦</span></div>
       <div className={`sacred-stage ${closing ? 'is-closing' : ''}`}>
-        <article key={`${view}:${horizontal ? 'sa' : props.language}`}
-          className={`sacred-scroll ${horizontal ? 'is-horizontal' : 'is-vertical'}`}
-          aria-label={`${props.verseLabel} — ${labels[view]}`}>
-          <div className="sacred-paper" aria-hidden="true" />
-          <div className="sacred-roller sacred-roller-start" aria-hidden="true" />
-          <div className="sacred-roller sacred-roller-end" aria-hidden="true" />
-          <div className="sacred-ink" lang={horizontal ? 'sa' : props.language}>
+        <SacredScrollSurface key={`${view}:${horizontal ? 'sa' : props.language}`}
+          horizontal={horizontal} label={`${props.verseLabel} — ${labels[view]}`}
+          language={horizontal ? 'sa' : props.language}>
             <p className="sacred-eyebrow">{props.verseLabel} · {labels[view]}</p>
             {horizontal ? <>
               <div className="sacred-verse font-sanskrit">
@@ -78,8 +76,7 @@ export function SacredScroll(props: SacredScrollProps) {
                 <><h3>Meaning</h3><p>{props.content.meaning}</p></>}
             </div>}
             <div className="sacred-seal" aria-hidden="true">✧</div>
-          </div>
-        </article>
+        </SacredScrollSurface>
       </div>
       <div className="sacred-tools" onKeyDown={event => {
         if (event.key === 'Escape' && menuOpen) { event.preventDefault(); closeMenu(); }

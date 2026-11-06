@@ -9,7 +9,8 @@ import {
   sendPasswordResetEmail,
   signInWithPopup,
 } from '../lib/firebase';
-import { supabase } from '../lib/supabase';
+import { profileRequest } from '../services/profileApi';
+import { registerAccount, authErrorMessage } from '../lib/registration';
 
 interface AuthViewProps {
   onSignInSuccess: (user: Partial<UserProfile>) => void;
@@ -43,43 +44,43 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
 
   const clearMessages = () => { setError(''); setSuccessMsg(''); };
 
-  const saveUserToSupabase = async (firebaseUid: string, name: string, userEmail: string, userMobile: string) => {
-    const { error } = await supabase.from('users').upsert({
-      firebase_uid: firebaseUid,
-      full_name: name,
-      email: userEmail,
-      mobile: userMobile,
-    }, { onConflict: 'firebase_uid' });
-    if (error) console.error('Supabase save error:', error.message);
+  const saveUserToSupabase = async (firebaseUid: string, name: string, _email: string, userMobile: string) => {
+    if (auth.currentUser?.uid !== firebaseUid) throw new Error('Please sign in again.');
+    return profileRequest('PUT', { full_name: name, mobile: userMobile });
   };
-
-  const getUserFromSupabase = async (firebaseUid: string) => {
-    const { data } = await supabase
-      .from('users')
-      .select('full_name, email, mobile, avatar_url, day_streak, books_read, events_count, chant_count')
-      .eq('firebase_uid', firebaseUid)
-      .maybeSingle();
-    return data;
+  const getUserFromSupabase = async (_firebaseUid: string) => profileRequest('GET');
+  const [canResendVerification, setCanResendVerification] = useState(false);
+  const handleResendVerification = async () => {
+    if (!auth.currentUser || auth.currentUser.emailVerified) return;
+    clearMessages(); setLoading(true);
+    try { await sendEmailVerification(auth.currentUser); setSuccessMsg('Verification email sent. Please check your inbox and spam folder.'); }
+    catch (error) { setError(authErrorMessage(error, 'Could not send verification email.')); }
+    finally { setLoading(false); }
   };
 
   // ── REGISTER ──
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
+    if (!fullName.trim()) { setError('Please enter your name.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     if (!mobile.match(/^[0-9]{10}$/)) { setError('Enter a valid 10-digit mobile number.'); return; }
     setLoading(true);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(cred.user);
-      await saveUserToSupabase(cred.user.uid, fullName, email, mobile);
-      setSuccessMsg('Account created! Please check your email to verify your account, then sign in.');
+      const message = await registerAccount({ email, password, name: fullName, mobile }, {
+        create: async (email, password) => (await createUserWithEmailAndPassword(auth, email, password)).user,
+        signIn: async (email, password) => (await signInWithEmailAndPassword(auth, email.trim(), password)).user,
+        profileExists: async () => Boolean(await profileRequest('GET')),
+        saveProfile: (name, mobile) => profileRequest('PUT', { full_name: name, mobile }),
+        sendVerification: sendEmailVerification,
+      });
+      setSuccessMsg(message);
+      setCanResendVerification(Boolean(auth.currentUser && !auth.currentUser.emailVerified));
       setMode('login');
       setFullName(''); setEmail(''); setMobile(''); setPassword(''); setConfirmPassword('');
     } catch (err: unknown) {
-      const msg = (err as { message?: string }).message || 'Registration failed.';
-      setError(msg.replace('Firebase: ', '').replace(/\(auth\/.*\)\.?/, '').trim());
+      setError(authErrorMessage(err, 'Registration failed.'));
     }
     setLoading(false);
   };
@@ -90,13 +91,21 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
     clearMessages();
     setLoading(true);
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      setCanResendVerification(!cred.user.emailVerified);
       if (!cred.user.emailVerified) {
         setError('Please verify your email before signing in. Check your inbox.');
         setLoading(false);
         return;
       }
       const profile = await getUserFromSupabase(cred.user.uid);
+      if (!profile) {
+        setPendingGoogleCred({ uid: cred.user.uid, email: cred.user.email || email.trim(), avatar: cred.user.photoURL || '' });
+        setFullName(cred.user.displayName || '');
+        setMode('google-complete');
+        setLoading(false);
+        return;
+      }
       onSignInSuccess({
         name: profile?.full_name || cred.user.displayName || 'Seeker',
         email: cred.user.email || email,
@@ -109,8 +118,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
       });
       onTabChange('home');
     } catch (err: unknown) {
-      const msg = (err as { message?: string }).message || 'Login failed.';
-      setError(msg.replace('Firebase: ', '').replace(/\(auth\/.*\)\.?/, '').trim());
+      setError(authErrorMessage(err, 'Login failed.'));
     }
     setLoading(false);
   };
@@ -142,8 +150,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
         setMode('google-complete');
       }
     } catch (err: unknown) {
-      const msg = (err as { message?: string }).message || 'Google sign-in failed.';
-      setError(msg.replace('Firebase: ', '').replace(/\(auth\/.*\)\.?/, '').trim());
+      setError(authErrorMessage(err, 'Google sign-in failed.'));
     }
     setLoading(false);
   };
@@ -186,8 +193,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
       await sendPasswordResetEmail(auth, email);
       setSuccessMsg('Password reset email sent! Check your inbox.');
     } catch (err: unknown) {
-      const msg = (err as { message?: string }).message || 'Failed to send reset email.';
-      setError(msg.replace('Firebase: ', '').replace(/\(auth\/.*\)\.?/, '').trim());
+      setError(authErrorMessage(err, 'Failed to send reset email.'));
     }
     setLoading(false);
   };
@@ -234,7 +240,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
 
           {/* Error / Success */}
           {error && (
-            <div className="mb-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs">
+            <div role="alert" className="mb-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs">
               {error}
             </div>
           )}
@@ -243,6 +249,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSignInSuccess, onTabChange
               {successMsg}
             </div>
           )}
+
+          {mode === 'login' && canResendVerification && <button type="button" disabled={loading} onClick={handleResendVerification} className="text-sm text-[#f2c377] underline mb-4 disabled:opacity-50">Resend verification email</button>}
 
           {/* ── GOOGLE COMPLETE PROFILE FORM ── */}
           {mode === 'google-complete' && (
