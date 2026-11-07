@@ -1,3 +1,5 @@
+import { normalizeSadhanaPractice } from '../src/services/sadhana/practiceCatalog';
+import { getMeditationConfig } from '../src/services/sadhana/meditationConfig';
 import express from 'express';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getApps, initializeApp } from 'firebase-admin/app';
@@ -199,14 +201,6 @@ export function createMeditationRouter(dependencies: Dependencies = {}) {
       'load published meditation practice',
     );
     if (!practice) throw new MeditationApiError(404, 'This meditation is not available.');
-    if (practice.meditation_category_id) {
-      const category = await checked(
-        db().from('meditation_categories').select('id').eq('id', practice.meditation_category_id)
-          .eq('status', 'published').maybeSingle(),
-        'verify meditation category visibility',
-      );
-      if (!category) throw new MeditationApiError(404, 'This meditation category is not available.');
-    }
     return practice;
   }
 
@@ -221,39 +215,9 @@ export function createMeditationRouter(dependencies: Dependencies = {}) {
         .eq('is_active', true).is('archived_at', null).order('display_order').order('name'),
       'load meditation catalogue',
     );
-    const ids = practices.map((practice: { id: string }) => practice.id);
-    if (ids.length === 0) {
-      response.json({ practices: [], categories: [], translations: [], audio: [], phases: [], recommendations: [], stages: [], stage_practices: [] });
-      return;
-    }
-    const today = kolkataDate();
-    const [categories, translations, audio, phases, recommendations, stages, stagePractices] = await Promise.all([
-      checked(client.from('meditation_categories').select('*').eq('status', 'published').order('display_order'), 'load published meditation categories'),
-      checked(client.from('meditation_practice_translations').select('*').in('practice_id', ids)
-        .eq('language_code', language).eq('status', 'published'), 'load published meditation translations'),
-      checked(client.from('meditation_audio_assets').select('*').in('practice_id', ids)
-        .eq('status', 'published').order('display_order'), 'load published meditation audio'),
-      checked(client.from('meditation_session_phases').select('*').in('practice_id', ids)
-        .order('display_order'), 'load meditation session phases'),
-      checked(client.from('meditation_daily_recommendations').select('*').in('practice_id', ids)
-        .eq('recommendation_date', today).eq('language_code', language).order('display_order'), 'load daily meditation recommendations'),
-      checked(client.from('meditation_stages').select('*').eq('status', 'published').order('stage_number'), 'load published meditation stages'),
-      checked(client.from('meditation_stage_practices').select('*').in('practice_id', ids).order('display_order'), 'load meditation journey assignments'),
-    ]);
-    const visibleCategories = new Set(categories.map((category: { id: string }) => category.id));
-    const visiblePractices = practices.filter((practice: { meditation_category_id?: string | null }) =>
-      !practice.meditation_category_id || visibleCategories.has(practice.meditation_category_id));
-    const visibleIds = new Set(visiblePractices.map((practice: { id: string }) => practice.id));
     response.json({
-      practices: visiblePractices,
-      categories,
-      translations,
-      audio: audio.filter((item: { practice_id: string }) => visibleIds.has(item.practice_id)),
-      phases: phases.filter((item: { practice_id: string }) => visibleIds.has(item.practice_id)),
-      recommendations: recommendations.filter((item: { practice_id: string }) => visibleIds.has(item.practice_id)),
-      stages,
-      stage_practices: stagePractices.filter((item: { practice_id: string; stage_id: string }) =>
-        visibleIds.has(item.practice_id) && stages.some((stage: { id: string }) => stage.id === item.stage_id)),
+      practices: practices.map(normalizeSadhanaPractice).filter(Boolean),
+      categories: [], translations: [], audio: [], phases: [], recommendations: [], stages: [], stage_practices: [],
     });
   }));
 
@@ -315,10 +279,13 @@ export function createMeditationRouter(dependencies: Dependencies = {}) {
       throw new MeditationApiError(400, 'Choose a supported meditation language.');
     }
     const practice = await publishedPractice(body.practice_id);
-    if (!practice.available_durations_seconds?.includes(body.planned_duration_seconds)) {
+    const normalized = normalizeSadhanaPractice(practice);
+    if (!normalized) throw new MeditationApiError(503, 'This meditation configuration is invalid.');
+    const configuration = getMeditationConfig(normalized);
+    if (!configuration.durations.includes(body.planned_duration_seconds)) {
       throw new MeditationApiError(400, 'Choose one of this meditation’s configured durations.');
     }
-    const sessionType = practice.meditation_type || 'guided';
+    const sessionType = configuration.sessionType;
     if (!SESSION_TYPES.has(sessionType)) throw new MeditationApiError(503, 'This meditation has an unsupported session type.');
     const client = db();
     await checked(client.from('user_meditation_sessions').upsert({

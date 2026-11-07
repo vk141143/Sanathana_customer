@@ -1,3 +1,4 @@
+import { getMeditationConfig } from '../services/sadhana/meditationConfig';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
@@ -43,7 +44,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
   const localStart = useRef<number | null>(null);
   const completionRequested = useRef(false);
   const [now, setNow] = useState(Date.now());
-  const [selectedDuration, setSelectedDuration] = useState(initialPractice?.default_duration_seconds ?? 600);
+  const [selectedDuration, setSelectedDuration] = useState(initialPractice ? getMeditationConfig(initialPractice).defaultDuration : 600);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [savingReflection, setSavingReflection] = useState(false);
@@ -57,25 +58,22 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
 
   const selectedPractice = useMemo(() =>
     library?.practices.find(item => item.id === selectedId) ??
-      (initialPractice?.id === selectedId ? initialPractice : null),
+      (!library && initialPractice?.id === selectedId ? initialPractice : null),
   [initialPractice, library, selectedId]);
-  const selectedTranslation = library?.translations.find(item =>
-    item.practice_id === selectedId && item.language_code === preferredLanguage.split('-')[0]);
-  const practiceAudio = library?.audio.filter(item => item.practice_id === selectedId) ?? [];
-  const languageAudio = practiceAudio.filter(item => item.language_code === preferredLanguage.split('-')[0]);
-  const guidedAudio = languageAudio.find(item => item.audio_type === 'guided' && item.is_default) ??
-    languageAudio.find(item => item.audio_type === 'guided') ??
-    practiceAudio.find(item => item.audio_type === 'guided' && item.is_default) ??
-    practiceAudio.find(item => item.audio_type === 'guided');
-  const ambientAudio = languageAudio.find(item => item.audio_type === 'ambient' && item.is_default) ??
-    languageAudio.find(item => item.audio_type === 'ambient') ??
-    practiceAudio.find(item => item.audio_type === 'ambient' && item.is_default) ??
-    practiceAudio.find(item => item.audio_type === 'ambient');
-  const currentPhases = (library?.phases.filter(item => item.practice_id === selectedId) ?? [])
-    .sort((left, right) => left.display_order - right.display_order);
-  const durations = selectedPractice?.available_durations_seconds?.length
-    ? selectedPractice.available_durations_seconds
-    : [180, 300, 600, 900, 1200, 1800];
+  const content = selectedPractice ? getMeditationConfig(selectedPractice, preferredLanguage) : null;
+  const [audioCompleted, setAudioCompleted] = useState(false);
+  const guidedRef = useRef<HTMLAudioElement>(null);
+  const ambientRef = useRef<HTMLAudioElement>(null);
+  const durations = content?.durations ?? [600];
+  useEffect(() => {
+    if (!session && content && !content.durations.includes(selectedDuration)) setSelectedDuration(content.defaultDuration);
+  }, [selectedPractice, session, selectedDuration]);
+  useEffect(() => {
+    for (const audio of [guidedRef.current, ambientRef.current]) {
+      if (!audio) continue;
+      if (!playing) audio.pause();
+    }
+  }, [playing]);
 
   useEffect(() => onAuthStateChanged(auth, user => {
     setSignedIn(!!user);
@@ -125,7 +123,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
       const started = localStart.current;
       const elapsed = session.active_duration_seconds +
         (started === null ? 0 : Math.floor((Date.now() - started) / 1000));
-      if (elapsed >= session.planned_duration_seconds && !completionRequested.current && !actionBusy.current) {
+      if (selectedPractice?.completion_rule === 'timer_elapsed' && elapsed >= session.planned_duration_seconds && !completionRequested.current && !actionBusy.current) {
         completionRequested.current = true;
         void performAction('complete');
       }
@@ -167,6 +165,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
       });
       setCurrentSession(result.session);
       localStart.current = action === 'heartbeat' || action === 'resume' ? Date.now() : null;
+      if (action === 'resume') setPlaying(true);
       if (action === 'pause' || action === 'complete' || action === 'abandon') setPlaying(false);
       if (action === 'complete') {
         setNotice(`Session completed. ${result.xp_awarded} XP earned.`);
@@ -204,6 +203,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
     setError('');
     setNotice('');
     completionRequested.current = false;
+    setAudioCompleted(false);
     try {
       const created = await meditationApi.startSession({
         practice_id: selectedPractice.id,
@@ -249,7 +249,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
         ambient_enabled: audioEnabled,
         bell_enabled: bellEnabled,
         preferred_language: preferredLanguage.split('-')[0],
-        preferred_session_type: selectedPractice?.meditation_type ?? null,
+        preferred_session_type: content?.sessionType ?? null,
       });
       setNotice('Meditation preferences saved.');
     } catch (cause) {
@@ -305,14 +305,6 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
     : 0;
   const remaining = session ? Math.max(0, session.planned_duration_seconds - activeSeconds) : selectedDuration;
   const completionPercent = session ? Math.min(100, activeSeconds / session.planned_duration_seconds * 100) : 0;
-  const phase = (() => {
-    let end = 0;
-    for (const item of currentPhases) {
-      end += item.duration_seconds;
-      if (activeSeconds < end) return item;
-    }
-    return currentPhases[currentPhases.length - 1] ?? null;
-  })();
 
   const back = () => {
     if (onBack) onBack();
@@ -377,7 +369,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
                 <div className="mt-3 flex flex-wrap gap-2">
                   {stagePractices.map(practice => <button key={practice.id} onClick={() => {
                     setSelectedId(practice.id);
-                    setSelectedDuration(practice.default_duration_seconds ?? 600);
+                    setSelectedDuration(getMeditationConfig(practice).defaultDuration);
                     setMode('session');
                     setPlaying(false);
                     setCurrentSession(null);
@@ -392,14 +384,14 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
               const isRecommended = library?.recommendations.some(item => item.practice_id === practice.id);
               const category = library?.categories.find(item => item.id === practice.meditation_category_id);
               return (
-                <button key={practice.id} onClick={() => { setSelectedId(practice.id); const preferred = history?.preferences?.preferred_duration_seconds; setSelectedDuration(preferred && practice.available_durations_seconds?.includes(preferred) ? preferred : practice.default_duration_seconds ?? 600); setMode('session'); setPlaying(false); setCurrentSession(null); }}
+                <button key={practice.id} onClick={() => { setSelectedId(practice.id); const preferred = history?.preferences?.preferred_duration_seconds; const config = getMeditationConfig(practice); setSelectedDuration(preferred && config.durations.includes(preferred) ? preferred : config.defaultDuration); setMode('session'); setPlaying(false); setCurrentSession(null); }}
                   className="w-full overflow-hidden rounded-2xl border border-[#d4af37]/20 bg-[#17140f] text-left">
                   {isSafePlayableUrl(practice.cover_image_url) && <img src={practice.cover_image_url!} alt="" className="h-36 w-full object-cover" loading="lazy" />}
                   <div className="p-4">
                     <p className="text-[10px] uppercase tracking-widest text-[#a18a67]">{category?.name ?? 'Meditation'}{isRecommended ? ' · Today’s practice' : ''}</p>
                     <h2 className="mt-1 font-serif text-lg text-[#f3d992]">{practice.name}</h2>
                     <p className="mt-1 line-clamp-2 text-sm text-[#b5a98a]">{practice.subtitle || practice.description}</p>
-                    <p className="mt-3 text-xs text-[#d4af37]">{(practice.meditation_type ?? 'guided').replace(/_/g, ' ')} · {Math.round((practice.default_duration_seconds ?? 600) / 60)} min</p>
+                    <p className="mt-3 text-xs text-[#d4af37]">{getMeditationConfig(practice).style} · {Math.round(getMeditationConfig(practice).defaultDuration / 60)} min</p>
                   </div>
                 </button>
               );
@@ -413,11 +405,19 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
         <section className="space-y-5">
           {isSafePlayableUrl(selectedPractice.cover_image_url) && <img src={selectedPractice.cover_image_url!} alt="" className="h-40 w-full rounded-2xl object-cover" />}
           <div className="text-center">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[#a18a67]">{(selectedPractice.meditation_type ?? 'guided').replace(/_/g, ' ')}</p>
-            <h2 className="mt-1 font-serif text-2xl text-[#f3d992]">{selectedTranslation?.title || selectedPractice.name}</h2>
-            <p className="mt-2 text-sm text-[#b5a98a]">{selectedTranslation?.subtitle || selectedPractice.subtitle || selectedPractice.description}</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[#a18a67]">{content?.style}</p>
+            <h2 className="mt-1 font-serif text-2xl text-[#f3d992]">{selectedPractice.name}</h2>
+            <p className="mt-2 text-sm text-[#b5a98a]">{selectedPractice.subtitle}</p>
           </div>
 
+          {selectedPractice.description && <p>{selectedPractice.description}</p>}
+          <p>{selectedPractice.difficulty} &middot; {Math.round((content?.defaultDuration ?? 600) / 60)} minutes</p>
+          {!!selectedPractice.benefits.length && <section><h3>Benefits</h3><ul>{selectedPractice.benefits.map((benefit, index) => <li key={index}>{benefit}</li>)}</ul></section>}
+          {content?.meaning && <section><h3>Meaning or explanation</h3><p className="whitespace-pre-wrap">{content.meaning}</p></section>}
+          {content?.instructions && <section><h3>Instructions</h3><p className="whitespace-pre-wrap">{content.instructions}</p></section>}
+          {content?.breathingGuidance && <section><h3>Breathing guidance</h3><p>{content.breathingGuidance}</p></section>}
+          {!session && content?.beginInstructions && <section><h3>Beginning instructions</h3><p>{content.beginInstructions}</p></section>}
+          {session?.status === 'completed' && content?.endInstructions && <section><h3>Ending instructions</h3><p>{content.endInstructions}</p></section>}
           {!session && <div className="space-y-4 rounded-2xl border border-white/10 bg-black/20 p-4">
             <label className="block text-xs text-[#b5a98a]">Session duration
               <select className="mt-2 w-full rounded-lg border border-white/10 bg-[#15130f] p-3 text-sm text-[#f3d992]" value={selectedDuration} onChange={event => setSelectedDuration(Number(event.target.value))}>
@@ -430,7 +430,7 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
             </div>
             <div className="flex gap-2">
               <button onClick={() => void savePreferences()} className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm text-[#d9c99f]">Save preferences</button>
-              <button disabled={selectedPractice.requires_audio && !selectedPractice.allow_silent_mode && !guidedAudio && !selectedPractice.guided_audio_url} onClick={() => void start()} className="flex-1 rounded-xl bg-[#d4af37] px-4 py-3 font-semibold text-[#17130b] disabled:cursor-not-allowed disabled:opacity-50">Begin meditation</button>
+              <button disabled={content?.guided && selectedPractice.practice_mode === 'guided_audio' && !content.guidedUrl} onClick={() => void start()} className="flex-1 rounded-xl bg-[#d4af37] px-4 py-3 font-semibold text-[#17130b] disabled:cursor-not-allowed disabled:opacity-50">Begin meditation</button>
             </div>
           </div>}
 
@@ -439,20 +439,23 @@ export const MeditationView: React.FC<MeditationViewProps> = ({
               <div className={`mb-5 grid h-36 w-36 place-items-center rounded-full border border-[#d4af37]/40 text-center ${playing ? 'animate-pulse bg-[#d4af37]/10' : 'bg-transparent'}`}>
                 <div><p className="font-serif text-3xl text-[#f3d992]">{formatTime(remaining)}</p><p className="mt-1 text-[10px] uppercase tracking-widest text-[#b5a98a]">remaining</p></div>
               </div>
-              <p className="text-center font-serif text-lg text-[#f3d992]">{phase?.title || (playing ? 'Rest in stillness' : 'Ready when you are')}</p>
-              <p className="mt-2 text-center text-sm leading-relaxed text-[#b5a98a]">{selectedTranslation?.guided_script || selectedTranslation?.instructions || phase?.instructions || selectedPractice.instructions}</p>
+              <p className="text-center font-serif text-lg text-[#f3d992]">{playing ? 'Rest in stillness' : 'Ready when you are'}</p>
+              <p className="mt-2 text-center text-sm leading-relaxed text-[#b5a98a]">{content?.instructions}</p>
               <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/10"><div className="h-full bg-[#d4af37] transition-all" style={{ width: `${completionPercent}%` }} /></div>
               <div className="mt-5 flex w-full gap-2">
                 {playing ? <button onClick={() => void performAction('pause')} className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm">Pause</button> : session.status === 'paused' ? <button onClick={() => void performAction('resume')} className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm">Resume</button> : null}
-                {!playing && completionPercent >= 80 && session.status === 'in_progress' && <button onClick={() => { completionRequested.current = true; void performAction('complete'); }} className="flex-1 rounded-xl bg-[#d4af37] px-4 py-3 text-sm font-semibold text-[#17130b]">Complete</button>}
+                {(session.status === 'in_progress' || session.status === 'paused') && ((selectedPractice.completion_rule ?? 'manual') === 'manual' || selectedPractice.completion_rule === 'audio_completed' && audioCompleted) && <button onClick={() => { completionRequested.current = true; void performAction('complete'); }} className="flex-1 rounded-xl bg-[#d4af37] px-4 py-3 text-sm font-semibold text-[#17130b]">Complete</button>}
                 {session.status !== 'completed' && <button onClick={() => void performAction('abandon')} className="rounded-xl border border-red-900/50 px-3 py-3 text-xs text-red-200">End</button>}
               </div>
             </div>
 
-            {guidedAudio && isSafePlayableUrl(guidedAudio.public_url) && <audio controls preload="none" className="w-full" src={guidedAudio.public_url} />}
-            {ambientAudio && audioEnabled && isSafePlayableUrl(ambientAudio.public_url) && <audio controls loop preload="none" className="w-full" src={ambientAudio.public_url} />}
-            {selectedPractice.requires_audio && !guidedAudio && !selectedPractice.guided_audio_url && <p role="status" className="text-xs text-amber-200">Guided audio is not currently published. Continue in silent mode if available.</p>}
-            {!guidedAudio && isSafePlayableUrl(selectedPractice.guided_audio_url) && <audio controls preload="none" className="w-full" src={selectedPractice.guided_audio_url!} />}
+            {content?.guidedUrl && <audio ref={guidedRef} aria-label="Guided audio" controls preload="none" className="w-full" src={content.guidedUrl}
+              onPlay={() => { if (!playing) guidedRef.current?.pause(); }}
+              onEnded={() => setAudioCompleted(true)} onError={() => setError('Guided audio could not be played. Please retry.')} />}
+            {content?.ambientUrl && audioEnabled && <audio ref={ambientRef} aria-label="Ambient audio" controls loop preload="none" className="w-full" src={content.ambientUrl}
+              onPlay={() => { if (!playing) ambientRef.current?.pause(); }}
+              onError={() => setError('Ambient audio could not be played. Meditation can continue without it.')} />}
+
           </>}
 
           {session?.status === 'completed' && (

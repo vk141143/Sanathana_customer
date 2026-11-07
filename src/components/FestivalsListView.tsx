@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { FestivalImage } from './FestivalMediaView';
+import { formatFestivalDate } from '../lib/festivalPresentation';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavTab, FestivalListItem } from '../types';
 import { cache } from '../lib/cache';
 import { supabase } from '../lib/supabase';
@@ -25,7 +27,7 @@ type FestivalType =
 
 interface FestivalsListViewProps {
   onTabChange: (tab: NavTab) => void;
-  onSelectFestival: (festivalId: string) => void;
+  onSelectFestival: (festivalId: string, occurrenceId?: string) => void;
 }
 
 const FESTIVAL_TYPES: FestivalType[] = [
@@ -51,38 +53,36 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
     useState<FestivalType>('All');
   const [error, setError] = useState<string | null>(null);
 
+  const requestId = useRef(0);
   useEffect(() => {
-    fetchFestivals();
+    void fetchFestivals();
+    return () => { requestId.current += 1; };
   }, []);
 
   const fetchFestivals = async (forceRefresh = false) => {
+    const request = ++requestId.current;
     setLoading(true);
     setError(null);
+    setFestivals([]);
 
     try {
       const year = currentFestivalYear();
       const cacheKey = festivalCache.listKey(year);
       cache.remove('festivals_list');
       if (forceRefresh) cache.remove(cacheKey);
-      const cached = cache.get<unknown>(cacheKey);
-      if (isFestivalListCache(cached)) {
-        setFestivals(cached);
-        setLoading(false);
-        return;
-      }
-      if (cached !== null) cache.remove(cacheKey);
-
       const rows = await fetchFestivalList(supabase, year);
+      if (request !== requestId.current) return;
       setFestivals(rows);
       cache.set(cacheKey, rows, festivalCache.listTtl);
     } catch (err) {
+      if (request !== requestId.current) return;
       console.error('Error fetching festivals:', err);
 
       setError(
         'Failed to load festivals. Please try again.'
       );
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   };
 
@@ -94,26 +94,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
   // ------------------------------------------------
   // DATE FORMATTER
   // ------------------------------------------------
-  const formatDate = (
-    dateStr?: string
-  ) => {
-    if (!dateStr) return '';
-
-    try {
-      const date = new Date(`${dateStr.slice(0, 10)}T12:00:00`);
-
-      return date.toLocaleDateString(
-        'en-IN',
-        {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        }
-      );
-    } catch {
-      return dateStr;
-    }
-  };
+  const formatDate = formatFestivalDate;
 
   // ------------------------------------------------
   // DISPLAY START → END DATE
@@ -296,6 +277,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
         {/* SEARCH */}
         {/* ================================================ */}
 
+        <div className="px-5 pb-3 flex justify-between text-xs"><span>{currentFestivalYear()} catalogue</span><button disabled={loading} onClick={() => void fetchFestivals(true)}>Refresh festivals</button></div>
         <section className="mb-4 px-4">
           <div
             className="
@@ -507,7 +489,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
         {/* FESTIVAL LIST */}
         {/* ================================================ */}
 
-        {!loading && (
+        {!loading && !error && (
           <section className="px-3 sm:px-4">
             {filteredFestivals.length ===
             0 ? (
@@ -548,7 +530,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                     text-[#D8B879]
                   "
                 >
-                  No Festivals Found
+                  {festivals.length ? 'No matching festivals' : 'No published festivals available'}
                 </p>
 
                 <p
@@ -571,9 +553,11 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                   festival => (
                     <article
                       key={festival.id}
+                      role="button" tabIndex={0}
+                      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectFestival(festival.id, festival.occurrence?.id); } }}
                       onClick={() =>
                         onSelectFestival(
-                          festival.id
+                          festival.id, festival.occurrence?.id
                         )
                       }
                       className="
@@ -613,10 +597,9 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                         "
                       >
                         {festival.coverMedia?.public_url ? (
-                          <img
+                          <FestivalImage
                             src={festival.coverMedia.public_url}
-                            alt={festival.coverMedia.alt_text || festival.name}
-                            loading="lazy"
+                            alt={festival.coverMedia.alt_text || festival.coverMedia.title || festival.coverMedia.file_name || festival.name}
                             className="
                               absolute
                               inset-0
@@ -933,7 +916,7 @@ export const FestivalsListView: React.FC<FestivalsListViewProps> = ({
                             e.stopPropagation();
 
                             onSelectFestival(
-                              festival.id
+                              festival.id, festival.occurrence?.id
                             );
                           }}
                           className="

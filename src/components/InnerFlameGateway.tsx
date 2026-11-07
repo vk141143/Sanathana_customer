@@ -23,6 +23,8 @@ const PATHS = [
   { id: 'sadhana', label: 'SADHANA', name: 'Sadhana', sub: 'Continue practice', x: 0, y: 108 },
 ];
 
+type InteractionPhase = 'idle' | 'animating' | 'revealing' | 'open';
+
 export function InnerFlameGateway({
   onAction,
   revealPending = false,
@@ -38,6 +40,7 @@ export function InnerFlameGateway({
   const requestedOpen = useRef(false);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [phase, setPhase] = useState<InteractionPhase>('idle');
   const menuId = useId();
   const artId = useId().replace(/:/g, "");
   const setRoot = useCallback((element: HTMLDivElement | null) => {
@@ -81,8 +84,25 @@ export function InnerFlameGateway({
         .to(select('.inner-flame-main'), { scaleX: 1.015, scaleY: 1.02, skewX: 0.8, svgOrigin: '32 55', duration: 2.2, ease: 'sine.inOut' }, 0)
         .to(select('.inner-flame-inner'), { scaleY: 0.985, opacity: 0.96, svgOrigin: '32 55', duration: 2.2, ease: 'sine.inOut' }, 0);
       const tl = gsap.timeline({ paused: true,
-        onComplete: () => { if (requestedOpen.current) { setReady(true); breathe.current?.restart(); } },
-        onReverseComplete: () => { idle.current?.resume(); },
+        onStart: () => {
+          if (requestedOpen.current) {
+            setPhase('animating');
+          }
+        },
+        onComplete: () => {
+          if (requestedOpen.current) {
+            setPhase('open');
+            setReady(true);
+            breathe.current?.restart();
+          }
+        },
+        onReverseComplete: () => {
+          if (!requestedOpen.current) {
+            setPhase('idle');
+            setReady(false);
+            idle.current?.resume();
+          }
+        },
       });
       master.current = tl;
       tl.addLabel('converge', 0)
@@ -131,12 +151,18 @@ export function InnerFlameGateway({
         .to(select('.inner-flame-dust'), { opacity: 0.12, duration: 0.4 }, 'ripple+=0.35');
       tl.to(select('.inner-flame-backdrop-layer'), { opacity: 1, '--inner-flame-blur': '6px', duration: reduced ? 0 : 0.4, ease: 'sine.inOut' }, reduced ? 0.1 : 1.3);
       tl.addLabel('reveal', reduced ? 0.2 : 1.6)
+        .call(() => {
+          if (requestedOpen.current) {
+            setPhase('revealing');
+          }
+        }, [], 'reveal')
         .to(nodes, { autoAlpha: 1, scale: 1,
           x: (i: number) => PATHS[i].x, y: (i: number) => PATHS[i].y,
           duration: reduced ? 0.2 : 0.25, stagger: reduced ? 0 : 0.08, ease: 'power3.out',
         }, 'reveal');
       if (requestedOpen.current) {
         tl.progress(1);
+        setPhase('open');
         setReady(true);
         idle.current?.pause();
       }
@@ -145,10 +171,12 @@ export function InnerFlameGateway({
   }, []);
 
   const toggle = (next: boolean) => {
+    if (next === requestedOpen.current) return;
     requestedOpen.current = next;
     setOpen(next);
     setReady(false);
     breathe.current?.pause(0);
+    setPhase('animating');
     if (next) { idle.current?.pause(); master.current?.play(); }
     else { center.current?.focus({ preventScroll: true }); master.current?.reverse(); }
   };
@@ -157,6 +185,7 @@ export function InnerFlameGateway({
     <div
       ref={setRoot}
       className="inner-flame-gateway home-reveal-hidden home-reveal-sadhana"
+      data-interaction-state={phase}
       aria-hidden={revealPending}
       onKeyDown={event => {
         if (event.key === 'Escape' && open) { event.stopPropagation(); toggle(false); }

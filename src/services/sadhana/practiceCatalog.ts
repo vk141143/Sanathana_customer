@@ -219,6 +219,8 @@ export function getLocalizedPracticeText(
   const languageContent = asRecord(localizedContent[preferredLanguage] ?? localizedContent[baseLanguage]);
   const localized = optionalString(languageContent[field]);
   if (localized) return localized;
+  const english = optionalString(asRecord(localizedContent.en)[field]);
+  if (english) return english;
   return field === 'instructions'
     ? practice.instructions
     : optionalString(practice.category_config.meaning);

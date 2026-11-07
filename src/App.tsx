@@ -1,3 +1,4 @@
+import { festivalLocation, festivalDetailHash } from './lib/festivalNavigation';
 import { useState, useEffect, useCallback, useReducer } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
@@ -31,7 +32,8 @@ import { NotesModal } from './components/NotesModal';
 
 export default function App() {
   const [showTempleJourney, setShowTempleJourney] = useState(false);
-  const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(null);
+  const [selectedFestivalId, setSelectedFestivalId] = useState<string | null>(() => festivalLocation(window.location.hash).festivalId);
+  const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(() => festivalLocation(window.location.hash).occurrenceId);
 
   const [showSplash, setShowSplash] = useState<boolean>(() => {
     try {
@@ -44,13 +46,16 @@ export default function App() {
     return true;
   });
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
-    const tab = window.location.hash.slice(1);
+    const tab = festivalLocation(window.location.hash).tab;
     return ['home','library','explore','sadhana','profile','meditation','achievements','auth','notifications','festivals'].includes(tab) ? tab as NavTab : 'home';
   });
   useEffect(() => {
     if (!window.history.state?.tab) window.history.replaceState({ ...window.history.state, tab: currentTab }, '');
     const back = () => {
-      const tab = window.history.state?.tab;
+      const location = festivalLocation(window.location.hash);
+      const tab = location.tab || window.history.state?.tab;
+      setSelectedFestivalId(location.festivalId);
+      setSelectedOccurrenceId(location.occurrenceId);
       if (['home','library','explore','sadhana','profile','meditation','achievements','auth','notifications','festivals'].includes(tab)) setCurrentTab(tab);
     };
     window.addEventListener('popstate', back);
@@ -356,14 +361,21 @@ export default function App() {
           return (
             <FestivalDetailView
               festivalId={selectedFestivalId}
-              onBack={() => setSelectedFestivalId(null)}
+              occurrenceId={selectedOccurrenceId}
+              onBack={() => {
+                if (window.history.state?.fromFestivalList) window.history.back();
+                else { window.history.replaceState({ tab: 'festivals' }, '', '#festivals'); setSelectedFestivalId(null); setSelectedOccurrenceId(null); }
+              }}
             />
           );
         }
         return (
           <FestivalsListView
             onTabChange={handleTabChange}
-            onSelectFestival={(festivalId) => setSelectedFestivalId(festivalId)}
+            onSelectFestival={(festivalId, occurrenceId) => {
+              window.history.pushState({ tab: 'festivals', fromFestivalList: true }, '', festivalDetailHash(festivalId, occurrenceId));
+              setSelectedFestivalId(festivalId); setSelectedOccurrenceId(occurrenceId ?? null); window.scrollTo(0, 0);
+            }}
           />
         );
 

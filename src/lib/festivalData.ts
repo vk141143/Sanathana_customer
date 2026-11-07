@@ -9,15 +9,15 @@ import type {
   FestivalSettings,
 } from '../types';
 
-const FESTIVAL_COLUMNS =
+export const FESTIVAL_COLUMNS =
   'id,name,alternate_name,slug,festival_type,short_description,primary_deity,associated_deities,tradition,status,is_active,cover_media_id,created_at,updated_at';
-const OCCURRENCE_COLUMNS =
+export const OCCURRENCE_COLUMNS =
   'id,festival_id,year,festival_date,tithi_name,paksha,nakshatra_name,yoga_name,shubha_muhurta_start,shubha_muhurta_end,puja_time_start,puja_time_end,rahu_kalam_start,rahu_kalam_end,yamagandam_start,yamagandam_end,gulika_kalam_start,gulika_kalam_end,fasting_enabled,fasting_type,parana_required,parana_time,fasting_rules,custom_timings,status';
-const CONTENT_COLUMNS =
+export const CONTENT_COLUMNS =
   'id,festival_id,occurrence_id,festival_description,spiritual_significance,festival_story,scriptural_references,puja_name,puja_duration_minutes,puja_description,puja_samagri,puja_vidhi,story_r2_key,story_r2_url,puja_r2_key,puja_r2_url,related_scriptures,related_slokas,related_mantras,related_stotrams,related_music,related_stories,created_at,updated_at';
-const MEDIA_COLUMNS =
+export const MEDIA_COLUMNS =
   'id,festival_id,occurrence_id,media_type,storage_key,public_url,file_name,mime_type,file_size,display_order,title,description,r2_key,duration_seconds,language_code,alt_text,caption,sort_order,is_cover';
-const SETTINGS_COLUMNS =
+export const SETTINGS_COLUMNS =
   'id,festival_id,show_on_home,is_featured,priority,show_from,show_until,show_in_calendar';
 
 const FESTIVALS_LIST_CACHE_TTL = 15 * 60 * 1000;
@@ -44,7 +44,7 @@ function throwOnError(operation: string, error: unknown): void {
   throw error instanceof Error ? error : new Error(`Failed to ${operation}.`);
 }
 
-function hasActiveVisibilityWindow(settings: FestivalSettings | null, today: string): boolean {
+export function hasActiveVisibilityWindow(settings: FestivalSettings | null, today: string): boolean {
   if (!settings) return true;
   return (!settings.show_from || settings.show_from <= today)
     && (!settings.show_until || settings.show_until >= today);
@@ -54,12 +54,12 @@ function compareOccurrenceDate(a: FestivalListItem, b: FestivalListItem): number
   const aDate = a.occurrence?.festival_date ?? '9999-12-31';
   const bDate = b.occurrence?.festival_date ?? '9999-12-31';
   return aDate.localeCompare(bDate)
-    || (a.settings?.priority ?? 0) - (b.settings?.priority ?? 0)
+    || (b.settings?.priority ?? 0) - (a.settings?.priority ?? 0)
     || a.name.localeCompare(b.name);
 }
 
 function isImageMedia(item: FestivalMedia): boolean {
-  return ['banner', 'image', 'gallery'].includes(item.media_type) && !!item.public_url;
+  return ['banner', 'image', 'gallery'].includes(item.media_type) && isFestivalUrl(item.public_url);
 }
 
 export function selectCurrentYearOccurrence(
@@ -89,9 +89,10 @@ export function selectFestivalContent(
   contentRows: FestivalContent[],
   occurrenceId: string | null,
 ): FestivalContent | null {
-  return contentRows.find(row => row.occurrence_id === occurrenceId && occurrenceId !== null)
-    ?? contentRows.find(row => row.occurrence_id === null)
-    ?? null;
+  const matching = contentRows.filter(row => occurrenceId !== null && row.occurrence_id === occurrenceId);
+  const scope = matching.length ? matching : contentRows.filter(row => row.occurrence_id === null);
+  if (scope.length > 1) console.warn('[festivals] Duplicate content rows for selected scope; using latest updated_at.');
+  return [...scope].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? '') || a.id.localeCompare(b.id))[0] ?? null;
 }
 
 export function selectFestivalCover(
@@ -99,11 +100,10 @@ export function selectFestivalCover(
   media: FestivalMedia[],
 ): FestivalMedia | null {
   const ordered = media.filter(isImageMedia).sort((a, b) =>
-    a.sort_order - b.sort_order || a.display_order - b.display_order
+    (a.sort_order ?? a.display_order ?? 0) - (b.sort_order ?? b.display_order ?? 0) || a.id.localeCompare(b.id)
   );
   return ordered.find(item => item.id === festival.cover_media_id)
     ?? ordered.find(item => item.is_cover)
-    ?? ordered[0]
     ?? null;
 }
 
@@ -143,7 +143,6 @@ export function mapFestivalListData(
         coverMedia: selectFestivalCover(festival, festivalMedia),
       };
     })
-    .filter(festival => hasActiveVisibilityWindow(festival.settings, today))
     .sort(compareOccurrenceDate);
 }
 
@@ -211,115 +210,73 @@ export function isFestivalDetailCache(value: unknown): value is FestivalDetail {
     && (value.coverMedia === null || typeof value.coverMedia === 'object');
 }
 
-export async function fetchFestivalList(
-  client: FestivalClient,
-  year = currentFestivalYear(),
-): Promise<FestivalListItem[]> {
-  const { data: festivals, error: festivalError } = await client
-    .from('festivals')
-    .select(FESTIVAL_COLUMNS)
-    .eq('status', 'Published')
-    .eq('is_active', true)
-    .order('name', { ascending: true });
-  throwOnError('load published festivals', festivalError);
-  const publishedFestivals = (festivals ?? []) as Festival[];
-  if (publishedFestivals.length === 0) return [];
-
-  const festivalIds = publishedFestivals.map(festival => festival.id);
-  const [occurrencesResult, mediaResult, settingsResult] = await Promise.all([
-    client
-      .from('festival_occurrences')
-      .select(OCCURRENCE_COLUMNS)
-      .in('festival_id', festivalIds)
-      .eq('year', year)
-      .eq('status', 'published'),
-    client
-      .from('festival_media')
-      .select(MEDIA_COLUMNS)
-      .in('festival_id', festivalIds)
-      .order('sort_order', { ascending: true })
-      .order('display_order', { ascending: true }),
-    client
-      .from('festival_settings')
-      .select(SETTINGS_COLUMNS)
-      .in('festival_id', festivalIds),
-  ]);
-  throwOnError('load published festival occurrences', occurrencesResult.error);
-  throwOnError('load festival media', mediaResult.error);
-  throwOnError('load festival display settings', settingsResult.error);
-
-  return mapFestivalListData(
-    publishedFestivals,
-    (occurrencesResult.data ?? []) as FestivalOccurrence[],
-    (mediaResult.data ?? []) as FestivalMedia[],
-    (settingsResult.data ?? []) as FestivalSettings[],
-    year,
-    currentDate(),
-  );
+export function isFestivalUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password; }
+  catch { return false; }
 }
 
-export async function fetchFestivalDetail(
-  festivalId: string,
-  client: FestivalClient,
-  year = currentFestivalYear(),
-): Promise<FestivalDetail | null> {
-  const { data: festival, error: festivalError } = await client
-    .from('festivals')
-    .select(FESTIVAL_COLUMNS)
-    .eq('id', festivalId)
-    .eq('status', 'Published')
-    .eq('is_active', true)
-    .maybeSingle();
-  throwOnError('load published festival', festivalError);
-  if (!festival) return null;
+export const FESTIVAL_MEDIA_TYPES = ['image', 'banner', 'gallery', 'audio', 'video', 'story_json', 'puja_json'];
 
-  const [occurrencesResult, contentResult, mediaResult, settingsResult] = await Promise.all([
-    client
-      .from('festival_occurrences')
-      .select(OCCURRENCE_COLUMNS)
-      .eq('festival_id', festivalId)
-      .eq('status', 'published')
-      .order('year', { ascending: true }),
-    client
-      .from('festival_content')
-      .select(CONTENT_COLUMNS)
-      .eq('festival_id', festivalId),
-    client
-      .from('festival_media')
-      .select(MEDIA_COLUMNS)
-      .eq('festival_id', festivalId)
-      .order('sort_order', { ascending: true })
-      .order('display_order', { ascending: true }),
-    client
-      .from('festival_settings')
-      .select(SETTINGS_COLUMNS)
-      .eq('festival_id', festivalId)
-      .maybeSingle(),
+// Each request is bounded; parent IDs are batched, never fetched once per card.
+async function allRows<T>(query: () => any, operation: string): Promise<T[]> {
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await query().range(offset, offset + 499);
+    throwOnError(operation, error);
+    const page = Array.isArray(data) ? data : [];
+    rows.push(...page);
+    if (page.length < 500) return rows;
+  }
+}
+
+export function homeFestivalItems(rows: FestivalListItem[], today = currentDate()): FestivalListItem[] {
+  return rows.filter(row => row.status === 'Published' && row.is_active && row.settings?.show_on_home && hasActiveVisibilityWindow(row.settings, today))
+    .sort((a, b) => (b.settings?.priority ?? 0) - (a.settings?.priority ?? 0) || compareOccurrenceDate(a, b));
+}
+
+export async function fetchFestivalList(client: FestivalClient, year = currentFestivalYear()): Promise<FestivalListItem[]> {
+  const festivals = await allRows<Festival>(() => client.from('festivals').select(FESTIVAL_COLUMNS)
+    .eq('status', 'Published').eq('is_active', true).order('id'), 'load published festivals');
+  const visible = festivals.filter(row => row.status === 'Published' && row.is_active);
+  const occurrences: FestivalOccurrence[] = [], media: FestivalMedia[] = [], settings: FestivalSettings[] = [];
+  for (let offset = 0; offset < visible.length; offset += 100) {
+    const ids = visible.slice(offset, offset + 100).map(row => row.id);
+    const [o, m, s] = await Promise.all([
+      allRows<FestivalOccurrence>(() => client.from('festival_occurrences').select(OCCURRENCE_COLUMNS).in('festival_id', ids)
+        .eq('year', year).eq('status', 'published').order('id'), 'load published occurrences'),
+      allRows<FestivalMedia>(() => client.from('festival_media').select(MEDIA_COLUMNS).in('festival_id', ids)
+        .in('media_type', FESTIVAL_MEDIA_TYPES).order('id'), 'load festival media'),
+      allRows<FestivalSettings>(() => client.from('festival_settings').select(SETTINGS_COLUMNS).in('festival_id', ids)
+        .order('festival_id'), 'load festival settings'),
+    ]);
+    occurrences.push(...o); media.push(...m); settings.push(...s);
+  }
+  return mapFestivalListData(visible, occurrences, media, settings, year, currentDate());
+}
+
+export async function fetchFestivalDetail(festivalId: string, client: FestivalClient,
+  year = currentFestivalYear(), requestedOccurrenceId?: string | null): Promise<FestivalDetail | null> {
+  const { data: festival, error } = await client.from('festivals').select(FESTIVAL_COLUMNS)
+    .eq('id', festivalId).eq('status', 'Published').eq('is_active', true).maybeSingle();
+  throwOnError('load published festival', error);
+  if (!festival || festival.status !== 'Published' || !festival.is_active) return null;
+  const occurrences = await allRows<FestivalOccurrence>(() => client.from('festival_occurrences').select(OCCURRENCE_COLUMNS)
+    .eq('festival_id', festivalId).eq('status', 'published').order('id'), 'load published occurrences');
+  const occurrence = requestedOccurrenceId
+    ? occurrences.find(row => row.id === requestedOccurrenceId && row.status === 'published') ?? null
+    : selectRelevantOccurrence(occurrences, year);
+  if (requestedOccurrenceId && !occurrence) return null;
+  const [contentRows, mediaRows, settingsRows] = await Promise.all([
+    allRows<FestivalContent>(() => client.from('festival_content').select(CONTENT_COLUMNS).eq('festival_id', festivalId).order('id'), 'load festival content'),
+    allRows<FestivalMedia>(() => client.from('festival_media').select(MEDIA_COLUMNS).eq('festival_id', festivalId)
+      .in('media_type', FESTIVAL_MEDIA_TYPES).order('id'), 'load festival media'),
+    allRows<FestivalSettings>(() => client.from('festival_settings').select(SETTINGS_COLUMNS).eq('festival_id', festivalId).order('festival_id'), 'load festival settings'),
   ]);
-  throwOnError('load published festival occurrences', occurrencesResult.error);
-  throwOnError('load festival content', contentResult.error);
-  throwOnError('load festival media', mediaResult.error);
-  throwOnError('load festival display settings', settingsResult.error);
-
-  const master = festival as Festival;
-  const occurrence = selectRelevantOccurrence(
-    (occurrencesResult.data ?? []) as FestivalOccurrence[],
-    year,
-  );
-  const content = selectFestivalContent(
-    (contentResult.data ?? []) as FestivalContent[],
-    occurrence?.id ?? null,
-  );
-  const relatedMedia = ((mediaResult.data ?? []) as FestivalMedia[])
-    .filter(item => item.occurrence_id === null || item.occurrence_id === occurrence?.id);
-  return {
-    ...master,
-    occurrence,
-    content,
-    media: relatedMedia,
-    settings: (settingsResult.data as FestivalSettings | null) ?? null,
-    coverMedia: selectFestivalCover(master, relatedMedia),
-  };
+  const media = mediaRows.filter(item => item.occurrence_id === null || item.occurrence_id === occurrence?.id)
+    .sort((a, b) => (a.sort_order ?? a.display_order ?? 0) - (b.sort_order ?? b.display_order ?? 0) || a.id.localeCompare(b.id));
+  return { ...festival, occurrence, content: selectFestivalContent(contentRows, occurrence?.id ?? null),
+    media, settings: settingsRows[0] ?? null, coverMedia: selectFestivalCover(festival, media) };
 }
 
 export const festivalCache = {

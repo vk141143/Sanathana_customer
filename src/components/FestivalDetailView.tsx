@@ -1,3 +1,5 @@
+import { FestivalImage, FestivalPlayer } from './FestivalMediaView';
+import { formatFestivalDate, formatFestivalTime, formatFestivalClock, fetchFestivalSections } from '../lib/festivalPresentation';
 import React, { useEffect, useRef, useState } from 'react';
 import { cache } from '../lib/cache';
 import { supabase } from '../lib/supabase';
@@ -12,6 +14,7 @@ import type { FestivalDetail, FestivalMedia } from '../types';
 interface FestivalDetailViewProps {
   festivalId: string;
   onBack: () => void;
+  occurrenceId?: string | null;
 }
 
 type ActiveTab = 'overview' | 'story' | 'puja' | 'gallery';
@@ -60,29 +63,8 @@ function displayValues(value: unknown): string[] {
   return values.map(displayValue).filter(Boolean);
 }
 
-function formatDate(value: string): string {
-  if (!value) return '';
-  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-IN', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
+const formatDate = formatFestivalDate;
+const formatTime = formatFestivalTime;
 
 function formatDuration(minutes: number | null): string {
   if (!minutes || minutes < 1) return '';
@@ -100,7 +82,7 @@ function isContentSectionAvailable(value: unknown): boolean {
   return contentSections(value).length > 0;
 }
 
-export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festivalId, onBack }) => {
+export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festivalId, occurrenceId, onBack }) => {
   const [festival, setFestival] = useState<FestivalDetail | null>(null);
   const [remoteStory, setRemoteStory] = useState<unknown>(null);
   const [remotePuja, setRemotePuja] = useState<unknown>(null);
@@ -114,6 +96,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
     const request = ++requestId.current;
     setLoading(true);
     setError(null);
+    setFestival(null);
     setRemoteStory(null);
     setRemotePuja(null);
     setRemoteContentError(false);
@@ -121,15 +104,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
       const year = currentFestivalYear();
       const cacheKey = festivalCache.detailKey(festivalId);
       if (forceRefresh) cache.remove(cacheKey);
-      const cached = cache.get<unknown>(cacheKey);
-      if (isFestivalDetailCache(cached) && cached.id === festivalId) {
-        setFestival(cached);
-        setLoading(false);
-        return;
-      }
-      if (cached !== null) cache.remove(cacheKey);
-
-      const detail = await fetchFestivalDetail(festivalId, supabase, year);
+      const detail = await fetchFestivalDetail(festivalId, supabase, year, occurrenceId);
       if (request !== requestId.current) return;
       setFestival(detail);
       if (detail) cache.set(cacheKey, detail, festivalCache.detailTtl);
@@ -148,7 +123,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
     return () => {
       requestId.current += 1;
     };
-  }, [festivalId]);
+  }, [festivalId, occurrenceId]);
 
   useEffect(() => {
     if (!festival?.content) return;
@@ -158,11 +133,8 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
     if (!storyNeeded && !pujaNeeded) return;
 
     let active = true;
-    const loadRemote = async (url: string): Promise<unknown> => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Content request failed (${response.status}).`);
-      return response.json();
-    };
+    const controller = new AbortController();
+    const loadRemote = (url: string) => fetchFestivalSections(url, controller.signal);
     const requests: Promise<void>[] = [];
     if (storyNeeded) {
       requests.push(loadRemote(content.story_r2_url!).then(value => {
@@ -183,6 +155,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [festival]);
 
@@ -249,17 +222,15 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
   }
 
   const occurrence = festival.occurrence;
-  const banner = festival.coverMedia?.public_url
-    ? festival.coverMedia
-    : media.find(item => ['banner', 'image'].includes(item.media_type) && item.public_url);
+  const banner = festival.coverMedia;
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-[#e5e2e1] max-w-lg mx-auto pb-10">
       <div className="relative h-64 overflow-hidden">
         {banner?.public_url ? (
-          <img
+          <FestivalImage
             src={banner.public_url}
-            alt={banner.alt_text || banner.title || festival.name}
+            alt={banner.alt_text || banner.title || banner.file_name || festival.name}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -283,10 +254,13 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
       </div>
 
       <div className="px-5 pt-4 pb-2">
+        <button onClick={() => void fetchAll(true)} className="text-xs text-[#f2c377] underline mb-3">Refresh festival</button>
         <h1 className="font-cinzel text-2xl text-[#f2c377] font-bold leading-tight">{festival.name}</h1>
         {festival.alternate_name && (
           <p className="text-sm text-[#d2c4b3]/70 italic mt-1">{festival.alternate_name}</p>
         )}
+        {festival.tradition && <p className="text-xs mt-2">Tradition: {festival.tradition}</p>}
+        {festival.short_description && <p className="text-sm mt-2">{festival.short_description}</p>}
         {occurrence?.festival_date && (
           <p className="text-xs text-[#d2c4b3]/60 mt-2 flex items-center gap-1">
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
@@ -346,12 +320,12 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
               <FestivalTimings occurrence={occurrence} />
             )}
 
-            {occurrence && (occurrence.fasting_enabled || occurrence.fasting_rules || occurrence.parana_required || occurrence.parana_time) && (
+            {occurrence && (occurrence.fasting_enabled || occurrence.parana_required && formatTime(occurrence.parana_time)) && (
               <InfoSection title="Fasting & Parana">
                 <div className="space-y-2 text-sm text-[#d2c4b3]/80">
-                  {occurrence.fasting_type && <p><span className="text-[#f2c377]">Fasting:</span> {occurrence.fasting_type}</p>}
-                  {occurrence.fasting_rules && <p>{occurrence.fasting_rules}</p>}
-                  {occurrence.parana_required && <p><span className="text-[#f2c377]">Parana:</span> {formatTime(occurrence.parana_time) || 'Required'}</p>}
+                  {occurrence.fasting_enabled && occurrence.fasting_type && <p><span className="text-[#f2c377]">Fasting:</span> {occurrence.fasting_type}</p>}
+                  {occurrence.fasting_enabled && occurrence.fasting_rules && <p>{occurrence.fasting_rules}</p>}
+                  {occurrence.parana_required && formatTime(occurrence.parana_time) && <p><span className="text-[#f2c377]">Parana:</span> {formatTime(occurrence.parana_time)} IST</p>}
                 </div>
               </InfoSection>
             )}
@@ -367,12 +341,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
             {audio.length > 0 && (
               <InfoSection title="Audio">
                 <div className="space-y-3">
-                  {audio.map(item => (
-                    <div key={item.id}>
-                      {item.title && <p className="text-xs text-[#d2c4b3]/70 mb-1">{item.title}</p>}
-                      <audio controls src={item.public_url} className="w-full h-9" style={{ accentColor: '#f2c377' }} />
-                    </div>
-                  ))}
+                  {audio.map(item => <FestivalPlayer key={item.id} media={item} />)}
                 </div>
               </InfoSection>
             )}
@@ -380,9 +349,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
             {video.length > 0 && (
               <InfoSection title="Videos">
                 <div className="space-y-3">
-                  {video.map(item => (
-                    <video key={item.id} controls src={item.public_url} className="w-full rounded-xl" />
-                  ))}
+                  {video.map(item => <FestivalPlayer key={item.id} media={item} />)}
                 </div>
               </InfoSection>
             )}
@@ -408,7 +375,7 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
 
         {activeTab === 'puja' && (
           <div className="space-y-5">
-            {pujaSections.length === 0 && !remoteContentError && (
+            {pujaSections.length === 0 && !!content?.puja_r2_url && !remoteContentError && (
               <div className="h-16 animate-pulse rounded-xl bg-[#1c1b1b]" aria-label="Loading puja instructions" />
             )}
             {content?.puja_name && <h2 className="font-cinzel text-[#f2c377] text-lg font-bold">{content.puja_name}</h2>}
@@ -440,10 +407,9 @@ export const FestivalDetailView: React.FC<FestivalDetailViewProps> = ({ festival
           <div className="grid grid-cols-2 gap-3">
             {images.map(item => (
               <div key={item.id} className="aspect-square rounded-xl overflow-hidden bg-[#1c1b1b]">
-                <img
+                <FestivalImage
                   src={item.public_url}
-                  alt={item.alt_text || item.caption || item.title || festival.name}
-                  loading="lazy"
+                  alt={item.alt_text || item.title || item.file_name || festival.name}
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -509,18 +475,18 @@ const FestivalTimings: React.FC<{ occurrence: NonNullable<FestivalDetail['occurr
     { label: 'Yamagandam', start: occurrence.yamagandam_start, end: occurrence.yamagandam_end, color: 'text-red-400', isBad: true },
     { label: 'Gulika', start: occurrence.gulika_kalam_start, end: occurrence.gulika_kalam_end, color: 'text-orange-400', isBad: true },
   ];
-  const timings = timingRows.filter(item => item.start || item.end);
+  const timings = timingRows.filter(item => formatTime(item.start) || formatTime(item.end));
   const custom = entries(occurrence.custom_timings).flatMap(item => {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     const label = text(record.name ?? record.title);
-    const start = text(record.start);
-    const end = text(record.end);
-    return label && (start || end) ? [{ label, start, end }] : [];
+    const start = formatFestivalClock(record.start);
+    const end = formatFestivalClock(record.end);
+    return label && (start || end) ? [{ label, start, end, description: text(record.description) }] : [];
   });
   if (timings.length === 0 && custom.length === 0) return null;
   return (
-    <InfoSection title="Auspicious Timings">
+    <InfoSection title="Timings (Asia/Kolkata ? IST)">
       <div className="space-y-2">
         {timings.map(({ label, start, end, color, isBad }) => (
           <TimingRow
@@ -533,7 +499,7 @@ const FestivalTimings: React.FC<{ occurrence: NonNullable<FestivalDetail['occurr
           />
         ))}
         {custom.map(item => (
-          <TimingRow key={item.label} label={item.label} start={formatTime(item.start)} end={formatTime(item.end)} color="text-[#f2c377]" />
+          <div key={item.label}><TimingRow label={item.label} start={item.start} end={item.end} color="text-[#f2c377]" />{item.description && <p className="text-xs text-[#d2c4b3]/70">{item.description}</p>}</div>
         ))}
       </div>
     </InfoSection>
